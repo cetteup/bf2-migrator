@@ -29,6 +29,7 @@ const (
 	playbf2Hostname   = "playbf2.ru"
 	bf2hubPatcherName = "BF2Hub Patcher"
 	bf2hubDLLName     = "bf2hbc.dll"
+	occurrences       = 10
 )
 
 type client interface {
@@ -288,24 +289,29 @@ func patchBinary(f finder, old, new string) error {
 		return err
 	}
 
-	current, err := os.ReadFile(path)
+	original, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
 
-	if bytes.Contains(current, []byte(bf2hubDLLName)) {
+	if bytes.Contains(original, []byte(bf2hubDLLName)) {
 		return fmt.Errorf("binary is currently patched for BF2Hub, use %q to revert patches first", bf2hubPatcherName)
 	}
-	if bytes.Contains(current, []byte(playbf2Hostname)) {
+	if bytes.Contains(original, []byte(playbf2Hostname)) {
 		return fmt.Errorf("binary is currently patched for PlayBF2, revert patches first")
 	}
+	// If binary contains neither old nor new the expected number of times, something's off with the binary
+	// (comparing both to avoid returning an error if a binary is already in the target state of patching)
+	if bytes.Count(original, []byte(old)) != occurrences && bytes.Count(original, []byte(new)) != occurrences {
+		return fmt.Errorf("binary contains unknown modifications, revert changes first")
+	}
 
-	future := bytes.ReplaceAll(current, []byte(old), []byte(new))
+	modified := bytes.ReplaceAll(original, []byte(old), []byte(new))
 
 	// No need to write if binary is already patched as desired
-	if bytes.Equal(future, current) {
+	if bytes.Equal(modified, original) {
 		return nil
 	}
 
-	return os.WriteFile(path, future, stats.Mode())
+	return os.WriteFile(path, modified, stats.Mode())
 }
