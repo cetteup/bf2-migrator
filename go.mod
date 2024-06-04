@@ -5,6 +5,7 @@ go 1.18
 require (
 	github.com/cetteup/conman v0.2.2
 	github.com/cetteup/filerepo v0.0.5
+	github.com/cetteup/joinme.click-launcher v0.2.2
 	github.com/lxn/walk v0.0.0-20210112085537-c389da54e794
 	github.com/lxn/win v0.0.0-20210218163916-a377121e959e
 	github.com/rs/zerolog v1.33.0
