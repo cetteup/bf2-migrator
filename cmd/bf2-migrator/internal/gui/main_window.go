@@ -26,6 +26,7 @@ const (
 
 	gamespyHostname   = "gamespy.com"
 	openspyHostname   = "openspy.net"
+	playbf2Hostname   = "playbf2.ru"
 	bf2hubPatcherName = "BF2Hub Patcher"
 	bf2hubDLLName     = "bf2hbc.dll"
 )
@@ -294,6 +295,9 @@ func patchBinary(f finder, old, new string) error {
 
 	if bytes.Contains(current, []byte(bf2hubDLLName)) {
 		return fmt.Errorf("binary is currently patched for BF2Hub, use %q to revert patches first", bf2hubPatcherName)
+	}
+	if bytes.Contains(current, []byte(playbf2Hostname)) {
+		return fmt.Errorf("binary is currently patched for PlayBF2, revert patches first")
 	}
 
 	future := bytes.ReplaceAll(current, []byte(old), []byte(new))
