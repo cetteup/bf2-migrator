@@ -20,5 +20,5 @@ jobs:
           project_path: cmd/bf2-migrator
           binary_name: bf2-migrator
           pre_command: go install github.com/josephspurrier/goversioninfo/cmd/goversioninfo@v1.4.0 && pushd cmd/bf2-migrator && go generate && popd
-          ldflags: -H windowsgui
+          ldflags: -s -w -H windowsgui
           sha256sum: true
