@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
 	"strconv"
 
 	"github.com/cetteup/conman/pkg/game/bf2"
@@ -282,9 +281,14 @@ func migrateProfile(h game.Handler, c client, profileKey string) error {
 		return fmt.Errorf("failed to get OpenSpy account profiles: %w", err)
 	}
 
-	exists := slices.ContainsFunc(profiles, func(profile openspy.ProfileDTO) bool {
-		return profile.UniqueNick == nick && profile.NamespaceID == 12
-	})
+	// Don't use slices package here to maintain compatibility with go 1.20 (and thus Windows 7)
+	exists := false
+	for _, profile := range profiles {
+		if profile.UniqueNick == nick && profile.NamespaceID == 12 {
+			exists = true
+			break
+		}
+	}
 
 	if !exists {
 		err2 := c.CreateProfile(nick, 12)
