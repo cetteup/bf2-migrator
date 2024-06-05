@@ -3,6 +3,7 @@ package gui
 import (
 	"bytes"
 	_ "embed"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -13,6 +14,8 @@ import (
 	"github.com/lxn/walk"
 	"github.com/lxn/walk/declarative"
 	"github.com/lxn/win"
+	"github.com/mitchellh/go-ps"
+	"golang.org/x/sys/windows/registry"
 
 	"github.com/cetteup/conman/pkg/game"
 	"github.com/cetteup/joinme.click-launcher/pkg/software_finder"
@@ -30,6 +33,9 @@ const (
 	bf2hubPatcherName = "BF2Hub Patcher"
 	bf2hubDLLName     = "bf2hbc.dll"
 	occurrences       = 10
+
+	bf2ExecutableName    = "BF2.exe"
+	bf2hubExecutableName = "bf2hub.exe"
 )
 
 type client interface {
@@ -42,12 +48,16 @@ type finder interface {
 	GetInstallDirFromSomewhere(configs []software_finder.Config) (string, error)
 }
 
+type registryRepository interface {
+	OpenKey(k registry.Key, path string, access uint32, cb func(key registry.Key) error) error
+}
+
 type DropDownItem struct { // Used in the ComboBox dropdown
 	Key  int
 	Name string
 }
 
-func CreateMainWindow(h game.Handler, c client, f finder, profiles []game.Profile, defaultProfileKey string) (*walk.MainWindow, error) {
+func CreateMainWindow(h game.Handler, c client, f finder, r registryRepository, profiles []game.Profile, defaultProfileKey string) (*walk.MainWindow, error) {
 	icon, err := walk.NewIconFromResourceIdWithSize(2, walk.Size{Width: 256, Height: 256})
 	if err != nil {
 		return nil, err
@@ -138,41 +148,53 @@ func CreateMainWindow(h game.Handler, c client, f finder, profiles []game.Profil
 				Children: []declarative.Widget{
 					declarative.PushButton{
 						AssignTo: &patchPB,
-						Text:     "Patch BF2.exe to use OpenSpy",
+						Text:     fmt.Sprintf("Patch %s to use OpenSpy", bf2ExecutableName),
 						OnClicked: func() {
 							// Block any actions during patching
 							mw.SetEnabled(false)
 							_ = patchPB.SetText("Patching...")
 							defer func() {
-								_ = patchPB.SetText("Patch BF2.exe to use OpenSpy")
+								_ = patchPB.SetText(fmt.Sprintf("Patch %s to use OpenSpy", bf2ExecutableName))
 								mw.SetEnabled(true)
 							}()
 
-							err2 := patchBinary(f, gamespyHostname, openspyHostname)
+							err2 := prepareForPatch(r)
 							if err2 != nil {
-								walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to patch BF2.exe: %s", err2.Error()), walk.MsgBoxIconError)
+								walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to prepare for patching %s: %s", bf2ExecutableName, err2.Error()), walk.MsgBoxIconError)
+								return
+							}
+
+							err2 = patchBinary(f, gamespyHostname, openspyHostname)
+							if err2 != nil {
+								walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to patch %s: %s", bf2ExecutableName, err2.Error()), walk.MsgBoxIconError)
 							} else {
-								walk.MsgBox(mw, "Success", fmt.Sprintf("Patched BF2.exe to use OpenSpy\n\nRevert patch before using %q to use BF2Hub again", bf2hubPatcherName), walk.MsgBoxIconInformation)
+								walk.MsgBox(mw, "Success", fmt.Sprintf("Patched %s to use OpenSpy\n\nRevert patch before using %q to use BF2Hub again", bf2ExecutableName, bf2hubPatcherName), walk.MsgBoxIconInformation)
 							}
 						},
 					},
 					declarative.PushButton{
 						AssignTo: &revertPB,
-						Text:     "Revert BF2.exe to use GameSpy",
+						Text:     fmt.Sprintf("Revert %s to use GameSpy", bf2ExecutableName),
 						OnClicked: func() {
 							// Block any actions during patching
 							mw.SetEnabled(false)
 							_ = revertPB.SetText("Reverting...")
 							defer func() {
-								_ = revertPB.SetText("Revert BF2.exe to use GameSpy")
+								_ = revertPB.SetText(fmt.Sprintf("Revert %s to use GameSpy", bf2ExecutableName))
 								mw.SetEnabled(true)
 							}()
 
-							err2 := patchBinary(f, openspyHostname, gamespyHostname)
+							err2 := prepareForPatch(r)
 							if err2 != nil {
-								walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to patch BF2.exe: %s", err2.Error()), walk.MsgBoxIconError)
+								walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to prepare for patching %s: %s", bf2ExecutableName, err2.Error()), walk.MsgBoxIconError)
+								return
+							}
+
+							err2 = patchBinary(f, openspyHostname, gamespyHostname)
+							if err2 != nil {
+								walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to patch %s: %s", bf2ExecutableName, err2.Error()), walk.MsgBoxIconError)
 							} else {
-								walk.MsgBox(mw, "Success", fmt.Sprintf("Reverted BF2.exe to to use GameSpy\n\nUse %q to use BF2Hub again", bf2hubPatcherName), walk.MsgBoxIconInformation)
+								walk.MsgBox(mw, "Success", fmt.Sprintf("Reverted %s to to use GameSpy\n\nUse %q to use BF2Hub again", bf2ExecutableName, bf2hubPatcherName), walk.MsgBoxIconInformation)
 							}
 						},
 					},
@@ -262,6 +284,52 @@ func migrateProfile(h game.Handler, c client, profileKey string) error {
 	return nil
 }
 
+func prepareForPatch(r registryRepository) error {
+	processes, err := ps.Processes()
+	if err != nil {
+		return fmt.Errorf("failed to retrieve process list: %s", err)
+	}
+
+	killed := map[int]string{}
+	for _, process := range processes {
+		executable := process.Executable()
+		if executable == bf2ExecutableName || executable == bf2hubExecutableName {
+			pid := process.Pid()
+			if err = killProcess(pid); err != nil {
+				return fmt.Errorf("failed to kill process %q: %s", executable, err)
+			}
+			killed[pid] = executable
+		}
+	}
+
+	err = waitForProcessesToExit(killed)
+	if err != nil {
+		return err
+	}
+
+	// Stop BF2Hub from re-patching the binary
+	err = r.OpenKey(registry.CURRENT_USER, "SOFTWARE\\BF2Hub Systems\\BF2Hub Client", registry.QUERY_VALUE|registry.SET_VALUE, func(key registry.Key) error {
+		if err2 := key.SetDWordValue("hrpApplyOnStartup", 0); err2 != nil {
+			return err2
+		}
+
+		if err2 := key.SetDWordValue("hrpInterval", 0); err2 != nil {
+			return err2
+		}
+
+		return nil
+	})
+	if err != nil {
+		// Ignore error if key does not exist, as it would indicate that the BF2Hub Client is not installed and thus
+		// cannot interfere with patching
+		if !errors.Is(err, registry.ErrNotExist) {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func patchBinary(f finder, old, new string) error {
 	// Copied from https://github.com/cetteup/joinme.click-launcher/blob/089fb595adc426aab775fe40165431501a5c38c3/internal/titles/bf2.go#L37
 	dir, err := f.GetInstallDirFromSomewhere([]software_finder.Config{
@@ -282,7 +350,7 @@ func patchBinary(f finder, old, new string) error {
 		return fmt.Errorf("failed to determine Battlefield 2 install directory: %w", err)
 	}
 
-	path := filepath.Join(dir, "BF2.exe")
+	path := filepath.Join(dir, bf2ExecutableName)
 
 	stats, err := os.Stat(path)
 	if err != nil {

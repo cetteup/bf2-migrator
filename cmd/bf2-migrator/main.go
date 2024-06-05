@@ -39,7 +39,7 @@ func main() {
 
 	c := openspy.New(openspy.BaseURL, 10)
 	f := software_finder.New(registryRepository, fileRepository)
-	mw, err := gui.CreateMainWindow(h, c, f, profiles, defaultProfileKey)
+	mw, err := gui.CreateMainWindow(h, c, f, registryRepository, profiles, defaultProfileKey)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to create main window")
 	}
