@@ -45,3 +45,17 @@ func waitForProcessesToExit(processes map[int]string) error {
 
 	return nil
 }
+
+func padRight(b []byte, c byte, l int) []byte {
+	if len(b) >= l {
+		return b
+	}
+
+	p := make([]byte, len(b), l)
+	copy(p, b)
+	for len(p) < l {
+		p = append(p, c)
+	}
+
+	return p
+}
