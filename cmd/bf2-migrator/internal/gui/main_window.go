@@ -19,40 +19,67 @@ import (
 	"github.com/cetteup/conman/pkg/game"
 	"github.com/cetteup/joinme.click-launcher/pkg/software_finder"
 
-	"github.com/dogclan/bf2-migrator/pkg/openspy"
+	api "github.com/dogclan/bf2-migrator/pkg/openspy"
 )
-
-type backend string
 
 const (
 	windowWidth  = 300
 	windowHeight = 290
 
-	backendUnknown backend = ""
-	backendGamespy backend = "gamespy.com"
-	backendOpenspy backend = "openspy.net"
-	backendBf2hub  backend = "bf2hub.com"
-	backendPlaybf2 backend = "playbf2.ru"
-
-	gamespyHostname   = "gamespy.com"
-	openspyHostname   = "openspy.net"
-	playbf2Hostname   = "playbf2.ru"
 	bf2hubPatcherName = "BF2Hub Patcher"
-	bf2hubDLLName     = "bf2hbc.dll"
 
 	bf2ExecutableName    = "BF2.exe"
 	bf2hubExecutableName = "bf2hub.exe"
-
-	bf2hubHostsPath  = "\\drivers\\xtc\\hosts"
-	playbf2HostsPath = "\\drivers\\etc\\hasts"
-	gamespyHostsPath = "\\drivers\\etc\\hosts"
-	openspyHostsPath = "\\drivers\\etz\\hosts"
 )
+
+type provider struct {
+	Name        string
+	Fingerprint fingerprint
+}
+
+type fingerprint struct {
+	Hostname   []byte
+	HostsPath  []byte
+	Additional [][]byte
+}
+
+var bf2hub = provider{
+	Name: "BF2Hub",
+	Fingerprint: fingerprint{
+		// BF2Hub does not modify the hostname, so modify based on the GameSpy hostname
+		Hostname:  []byte("gamespy.com"),
+		HostsPath: []byte("\\drivers\\xtc\\hosts"),
+		Additional: [][]byte{
+			[]byte("bf2hbc.dll"),
+		},
+	},
+}
+var playbf2 = provider{
+	Name: "PlayBF2",
+	Fingerprint: fingerprint{
+		Hostname:  []byte("playbf2.ru"),
+		HostsPath: []byte("\\drivers\\etc\\hasts"),
+	},
+}
+var openspy = provider{
+	Name: "OpenSpy",
+	Fingerprint: fingerprint{
+		Hostname:  []byte("openspy.net"),
+		HostsPath: []byte("\\drivers\\etz\\hosts"),
+	},
+}
+var gamespy = provider{
+	Name: "GameSpy",
+	Fingerprint: fingerprint{
+		Hostname:  []byte("gamespy.com"),
+		HostsPath: []byte("\\drivers\\etc\\hosts"),
+	},
+}
 
 type client interface {
 	CreateAccount(email, password string, partnerCode int) error
 	CreateProfile(nick string, namespaceID int) error
-	GetProfiles() ([]openspy.ProfileDTO, error)
+	GetProfiles() ([]api.ProfileDTO, error)
 }
 
 type finder interface {
@@ -163,7 +190,7 @@ func CreateMainWindow(h game.Handler, c client, f finder, r registryRepository) 
 								return
 							}
 
-							err2 = patchBinary(f, backendOpenspy)
+							err2 = patchBinary(f, openspy)
 							if err2 != nil {
 								walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to patch %s: %s", bf2ExecutableName, err2.Error()), walk.MsgBoxIconError)
 							} else {
@@ -189,7 +216,7 @@ func CreateMainWindow(h game.Handler, c client, f finder, r registryRepository) 
 								return
 							}
 
-							err2 = patchBinary(f, backendGamespy)
+							err2 = patchBinary(f, gamespy)
 							if err2 != nil {
 								walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to patch %s: %s", bf2ExecutableName, err2.Error()), walk.MsgBoxIconError)
 							} else {
@@ -344,7 +371,7 @@ func prepareForPatch(r registryRepository) error {
 	return nil
 }
 
-func patchBinary(f finder, new backend) error {
+func patchBinary(f finder, new provider) error {
 	// Copied from https://github.com/cetteup/joinme.click-launcher/blob/089fb595adc426aab775fe40165431501a5c38c3/internal/titles/bf2.go#L37
 	dir, err := f.GetInstallDirFromSomewhere([]software_finder.Config{
 		{
@@ -376,25 +403,18 @@ func patchBinary(f finder, new backend) error {
 		return err
 	}
 
-	// Detect "old"/current backend based on what's in the binary
-	old, err := determineCurrentlyUsedBackend(original)
+	// Detect "old"/current provider based on what's in the binary
+	old, err := determineCurrentlyUsedProvider(original)
 	if err != nil {
 		return err
 	}
 
 	// No need to patch if binary is already patched as desired
-	if new == old {
+	if new.Name == old.Name {
 		return nil
 	}
 
-	var modifications []modification
-	if old == backendBf2hub {
-		// BF2Hub does not modify the hostname, so modify based on the GameSpy hostname
-		modifications = getModifications(old, gamespyHostname, openspyHostname)
-	} else {
-		modifications = getModifications(old, string(old), string(new))
-	}
-
+	modifications := getModifications(old, new)
 	modified := original[:]
 	for _, m := range modifications {
 		count := bytes.Count(modified, m.Old)
@@ -413,18 +433,15 @@ func patchBinary(f finder, new backend) error {
 	return os.WriteFile(path, modified, stats.Mode())
 }
 
-func determineCurrentlyUsedBackend(b []byte) (backend, error) {
-	if bytes.Contains(b, []byte(bf2hubHostsPath)) && bytes.Contains(b, []byte(bf2hubDLLName)) {
-		return backendBf2hub, nil
-	} else if bytes.Contains(b, []byte(playbf2HostsPath)) && bytes.Contains(b, []byte(playbf2Hostname)) {
-		return backendPlaybf2, nil
-	} else if bytes.Contains(b, []byte(openspyHostsPath)) && bytes.Contains(b, []byte(openspyHostname)) {
-		return backendOpenspy, nil
-	} else if bytes.Contains(b, []byte(gamespyHostname)) && bytes.Contains(b, []byte(gamespyHostname)) {
-		return backendGamespy, nil
+func determineCurrentlyUsedProvider(b []byte) (provider, error) {
+	for _, p := range []provider{bf2hub, playbf2, openspy, gamespy} {
+		ridges := append(p.Fingerprint.Additional, p.Fingerprint.Hostname, p.Fingerprint.HostsPath)
+		if containsAll(b, ridges) {
+			return p, nil
+		}
 	}
 
-	return backendUnknown, fmt.Errorf("binary contains unknown/mixed modifications, revert changes first")
+	return provider{}, fmt.Errorf("binary contains unknown/mixed modifications, revert changes first")
 }
 
 type modification struct {
@@ -433,113 +450,92 @@ type modification struct {
 	Count int
 }
 
-func getModifications(backend backend, old string, new string) []modification {
-	// Default modifications, required for patching any backend
+func getModifications(old, new provider) []modification {
+	// Default modifications, required for patching any provider
 	modifications := []modification{
 		{
-			Old:   padRight([]byte(fmt.Sprintf("gamestats.%s", old)), 0, 21),
-			New:   []byte(fmt.Sprintf("gamestats.%s", new)),
+			Old:   old.Fingerprint.HostsPath,
+			New:   new.Fingerprint.HostsPath,
+			Count: 1,
+		},
+		{
+			Old:   padRight([]byte(fmt.Sprintf("gamestats.%s", old.Fingerprint.Hostname)), 0, 21),
+			New:   []byte(fmt.Sprintf("gamestats.%s", new.Fingerprint.Hostname)),
 			Count: 2,
 		},
 		{
-			Old:   padRight([]byte(fmt.Sprintf("http://stage-net.%s/bf2/getplayerinfo.aspx?pid=", old)), 0, 56),
-			New:   []byte(fmt.Sprintf("http://stage-net.%s/bf2/getplayerinfo.aspx?pid=", new)),
+			Old:   padRight([]byte(fmt.Sprintf("http://stage-net.%s/bf2/getplayerinfo.aspx?pid=", old.Fingerprint.Hostname)), 0, 56),
+			New:   []byte(fmt.Sprintf("http://stage-net.%s/bf2/getplayerinfo.aspx?pid=", new.Fingerprint.Hostname)),
 			Count: 1,
 		},
 		{
 			// "BF2Web.%s" would also match the below modification and break the url, so add a trailing nil-byte to
 			// avoid the partial match
-			Old:   padRight([]byte(fmt.Sprintf("BF2Web.%s", old)), 0, 19),
-			New:   padRight([]byte(fmt.Sprintf("BF2Web.%s", new)), 0, 19),
+			Old:   padRight([]byte(fmt.Sprintf("BF2Web.%s", old.Fingerprint.Hostname)), 0, 19),
+			New:   padRight([]byte(fmt.Sprintf("BF2Web.%s", new.Fingerprint.Hostname)), 0, 19),
 			Count: 1,
 		},
 		{
-			Old:   padRight([]byte(fmt.Sprintf("http://BF2Web.%s/ASP/", old)), 0, 30),
-			New:   []byte(fmt.Sprintf("http://BF2Web.%s/ASP/", new)),
+			Old:   padRight([]byte(fmt.Sprintf("http://BF2Web.%s/ASP/", old.Fingerprint.Hostname)), 0, 30),
+			New:   []byte(fmt.Sprintf("http://BF2Web.%s/ASP/", new.Fingerprint.Hostname)),
 			Count: 1,
 		},
 		{
-			Old:   padRight([]byte(fmt.Sprintf("%%s.available.%s", old)), 0, 24),
-			New:   []byte(fmt.Sprintf("%%s.available.%s", new)),
+			Old:   padRight([]byte(fmt.Sprintf("%%s.available.%s", old.Fingerprint.Hostname)), 0, 24),
+			New:   []byte(fmt.Sprintf("%%s.available.%s", new.Fingerprint.Hostname)),
 			Count: 1,
 		},
 		{
-			Old:   padRight([]byte(fmt.Sprintf("%%s.master.%s", old)), 0, 21),
-			New:   []byte(fmt.Sprintf("%%s.master.%s", new)),
+			Old:   padRight([]byte(fmt.Sprintf("%%s.master.%s", old.Fingerprint.Hostname)), 0, 21),
+			New:   []byte(fmt.Sprintf("%%s.master.%s", new.Fingerprint.Hostname)),
 			Count: 1,
 		},
 		{
-			Old:   padRight([]byte(fmt.Sprintf("gpcm.%s", old)), 0, 16),
-			New:   []byte(fmt.Sprintf("gpcm.%s", new)),
+			Old:   padRight([]byte(fmt.Sprintf("gpcm.%s", old.Fingerprint.Hostname)), 0, 16),
+			New:   []byte(fmt.Sprintf("gpcm.%s", new.Fingerprint.Hostname)),
 			Count: 1,
 		},
 		{
-			Old:   padRight([]byte(fmt.Sprintf("gpsp.%s", old)), 0, 16),
-			New:   []byte(fmt.Sprintf("gpsp.%s", new)),
+			Old:   padRight([]byte(fmt.Sprintf("gpsp.%s", old.Fingerprint.Hostname)), 0, 16),
+			New:   []byte(fmt.Sprintf("gpsp.%s", new.Fingerprint.Hostname)),
 			Count: 1,
 		},
 	}
 
 	// Backend-specific modifications
-	switch backend {
-	case backendBf2hub:
-		modifications = append([]modification{
-			{
-				Old:   []byte(bf2hubHostsPath),
-				New:   []byte(openspyHostsPath),
-				Count: 1,
-			},
-			{
-				Old:   []byte(bf2hubDLLName),
+	switch old.Name {
+	case bf2hub.Name:
+		modifications = append(modifications,
+			modification{
+				Old:   []byte("bf2hbc.dll"),
 				New:   []byte("WS2_32.dll"),
 				Count: 1,
 			},
-			{
-				Old:   padRight([]byte(fmt.Sprintf("%%s.ms%%d.%s", old)), 0, 19),
-				New:   []byte(fmt.Sprintf("%%s.ms%%d.%s", new)),
+			modification{
+				Old:   padRight([]byte(fmt.Sprintf("%%s.ms%%d.%s", old.Fingerprint.Hostname)), 0, 19),
+				New:   []byte(fmt.Sprintf("%%s.ms%%d.%s", new.Fingerprint.Hostname)),
 				Count: 1,
 			},
-		}, modifications...)
-	case backendPlaybf2:
-		modifications = append([]modification{
-			{
-				Old:   []byte(playbf2HostsPath),
-				New:   []byte(openspyHostsPath),
-				Count: 1,
-			},
-			{
-				// PlayBF2 removes the numeric placeholder/verb ("%d") in addition to the hostname
-				Old:   padRight([]byte(fmt.Sprintf("%%s.ms.%s", old)), 0, 19),
-				New:   []byte(fmt.Sprintf("%%s.ms%%d.%s", new)),
-				Count: 1,
-			},
-		}, modifications...)
-	case backendOpenspy:
-		modifications = append([]modification{
-			{
-				Old:   []byte(openspyHostsPath),
-				New:   []byte(gamespyHostsPath),
-				Count: 1,
-			},
-			{
-				Old:   padRight([]byte(fmt.Sprintf("%%s.ms%%d.%s", old)), 0, 19),
-				New:   []byte(fmt.Sprintf("%%s.ms%%d.%s", new)),
-				Count: 1,
-			},
-		}, modifications...)
-	case backendGamespy:
-		modifications = append([]modification{
-			{
-				Old:   []byte(gamespyHostsPath),
-				New:   []byte(openspyHostsPath),
-				Count: 1,
-			},
-			{
-				Old:   padRight([]byte(fmt.Sprintf("%%s.ms%%d.%s", old)), 0, 19),
-				New:   []byte(fmt.Sprintf("%%s.ms%%d.%s", new)),
-				Count: 1,
-			},
-		}, modifications...)
+		)
+	case playbf2.Name:
+		modifications = append(modifications, modification{
+			// PlayBF2 removes the numeric placeholder/verb ("%d") in addition to the hostname
+			Old:   padRight([]byte(fmt.Sprintf("%%s.ms.%s", old.Fingerprint.Hostname)), 0, 19),
+			New:   []byte(fmt.Sprintf("%%s.ms%%d.%s", new.Fingerprint.Hostname)),
+			Count: 1,
+		})
+	case openspy.Name:
+		modifications = append(modifications, modification{
+			Old:   padRight([]byte(fmt.Sprintf("%%s.ms%%d.%s", old.Fingerprint.Hostname)), 0, 19),
+			New:   []byte(fmt.Sprintf("%%s.ms%%d.%s", new.Fingerprint.Hostname)),
+			Count: 1,
+		})
+	case gamespy.Name:
+		modifications = append(modifications, modification{
+			Old:   padRight([]byte(fmt.Sprintf("%%s.ms%%d.%s", old.Fingerprint.Hostname)), 0, 19),
+			New:   []byte(fmt.Sprintf("%%s.ms%%d.%s", new.Fingerprint.Hostname)),
+			Count: 1,
+		})
 	}
 
 	return modifications

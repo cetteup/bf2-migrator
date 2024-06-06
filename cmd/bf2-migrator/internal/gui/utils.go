@@ -1,6 +1,7 @@
 package gui
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"syscall"
@@ -58,4 +59,14 @@ func padRight(b []byte, c byte, l int) []byte {
 	}
 
 	return p
+}
+
+func containsAll(b []byte, subslices [][]byte) bool {
+	for _, subslice := range subslices {
+		if !bytes.Contains(b, subslice) {
+			return false
+		}
+	}
+
+	return true
 }
