@@ -7,13 +7,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 
 	"github.com/cetteup/conman/pkg/game/bf2"
 	"github.com/lxn/walk"
 	"github.com/lxn/walk/declarative"
 	"github.com/lxn/win"
 	"github.com/mitchellh/go-ps"
+	"github.com/rs/zerolog/log"
 	"golang.org/x/sys/windows/registry"
 
 	"github.com/cetteup/conman/pkg/game"
@@ -63,12 +63,7 @@ type registryRepository interface {
 	OpenKey(k registry.Key, path string, access uint32, cb func(key registry.Key) error) error
 }
 
-type DropDownItem struct { // Used in the ComboBox dropdown
-	Key  int
-	Name string
-}
-
-func CreateMainWindow(h game.Handler, c client, f finder, r registryRepository, profiles []game.Profile, defaultProfileKey string) (*walk.MainWindow, error) {
+func CreateMainWindow(h game.Handler, c client, f finder, r registryRepository) (*walk.MainWindow, error) {
 	icon, err := walk.NewIconFromResourceIdWithSize(2, walk.Size{Width: 256, Height: 256})
 	if err != nil {
 		return nil, err
@@ -76,11 +71,6 @@ func CreateMainWindow(h game.Handler, c client, f finder, r registryRepository, 
 
 	screenWidth := win.GetSystemMetrics(win.SM_CXSCREEN)
 	screenHeight := win.GetSystemMetrics(win.SM_CYSCREEN)
-
-	profileOptions, selectedProfile, err := computeProfileSelectOptions(profiles, defaultProfileKey)
-	if err != nil {
-		return nil, err
-	}
 
 	var mw *walk.MainWindow
 	var selectCB *walk.ComboBox
@@ -109,15 +99,13 @@ func CreateMainWindow(h game.Handler, c client, f finder, r registryRepository, 
 			},
 			declarative.ComboBox{
 				AssignTo:      &selectCB,
-				Value:         profileOptions[selectedProfile].Key,
-				Model:         profileOptions,
 				DisplayMember: "Name",
 				BindingMember: "Key",
 				Name:          "Select profile",
 				ToolTipText:   "Select profile",
 				OnCurrentIndexChanged: func() {
 					// Password actions cannot be used with singleplayer profiles, since those don't have passwords
-					if profiles[selectCB.CurrentIndex()].Type == game.ProfileTypeMultiplayer {
+					if selectCB.Model().([]game.Profile)[selectCB.CurrentIndex()].Type == game.ProfileTypeMultiplayer {
 						migratePB.SetEnabled(true)
 					} else {
 						migratePB.SetEnabled(false)
@@ -141,7 +129,7 @@ func CreateMainWindow(h game.Handler, c client, f finder, r registryRepository, 
 								mw.SetEnabled(true)
 							}()
 
-							profile := profiles[selectCB.CurrentIndex()]
+							profile := selectCB.Model().([]game.Profile)[selectCB.CurrentIndex()]
 							err2 := migrateProfile(h, c, profile.Key)
 							if err2 != nil {
 								walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to migrate %q to OpenSpy: %s", profile.Name, err2.Error()), walk.MsgBoxIconError)
@@ -225,29 +213,39 @@ func CreateMainWindow(h game.Handler, c client, f finder, r registryRepository, 
 	// Disable minimize/maximize buttons and fix size
 	win.SetWindowLong(mw.Handle(), win.GWL_STYLE, win.GetWindowLong(mw.Handle(), win.GWL_STYLE) & ^win.WS_MINIMIZEBOX & ^win.WS_MAXIMIZEBOX & ^win.WS_SIZEBOX)
 
+	profiles, selected, err := getProfiles(h)
+	if err != nil {
+		walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to load list of available profiles: %s", err.Error()), walk.MsgBoxIconError)
+		return nil, err
+	}
+	_ = selectCB.SetModel(profiles)
+	_ = selectCB.SetCurrentIndex(selected)
+
 	return mw, nil
 }
 
-func computeProfileSelectOptions(profiles []game.Profile, defaultProfileKey string) ([]DropDownItem, int, error) {
-	defaultOption := 0
-	options := make([]DropDownItem, 0, len(profiles))
-	for i, profile := range profiles {
-		key, err := strconv.Atoi(profile.Key)
-		if err != nil {
-			return nil, 0, err
-		}
-
-		if profile.Key == defaultProfileKey {
-			defaultOption = i
-		}
-
-		options = append(options, DropDownItem{
-			Key:  key,
-			Name: profile.Name,
-		})
+func getProfiles(h game.Handler) ([]game.Profile, int, error) {
+	profiles, err := bf2.GetProfiles(h)
+	if err != nil {
+		return nil, 0, err
 	}
 
-	return options, defaultOption, nil
+	defaultProfileKey, err := bf2.GetDefaultProfileKey(h)
+	if err != nil {
+		log.Error().
+			Err(err).
+			Msg("Failed to get default profile key")
+		// If determining the default profile fails, simply pre-select the first profile (don't return an error)
+		return profiles, 0, nil
+	}
+
+	for i, profile := range profiles {
+		if profile.Key == defaultProfileKey {
+			return profiles, i, nil
+		}
+	}
+
+	return profiles, 0, nil
 }
 
 func migrateProfile(h game.Handler, c client, profileKey string) error {
