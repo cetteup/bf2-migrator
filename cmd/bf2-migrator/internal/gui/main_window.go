@@ -23,10 +23,8 @@ import (
 )
 
 const (
-	windowWidth  = 300
+	windowWidth  = 250
 	windowHeight = 290
-
-	bf2hubPatcherName = "BF2Hub Patcher"
 
 	bf2ExecutableName    = "BF2.exe"
 	bf2hubExecutableName = "bf2hub.exe"
@@ -100,8 +98,9 @@ func CreateMainWindow(h game.Handler, c client, f finder, r registryRepository) 
 	screenHeight := win.GetSystemMetrics(win.SM_CYSCREEN)
 
 	var mw *walk.MainWindow
-	var selectCB *walk.ComboBox
+	var profileCB *walk.ComboBox
 	var migratePB *walk.PushButton
+	var providerCB *walk.ComboBox
 	var patchPB *walk.PushButton
 	var revertPB *walk.PushButton
 
@@ -125,14 +124,14 @@ func CreateMainWindow(h game.Handler, c client, f finder, r registryRepository) 
 				Background: declarative.SolidColorBrush{Color: walk.Color(win.GetSysColor(win.COLOR_BTNFACE))},
 			},
 			declarative.ComboBox{
-				AssignTo:      &selectCB,
+				AssignTo:      &profileCB,
 				DisplayMember: "Name",
 				BindingMember: "Key",
 				Name:          "Select profile",
 				ToolTipText:   "Select profile",
 				OnCurrentIndexChanged: func() {
 					// Password actions cannot be used with singleplayer profiles, since those don't have passwords
-					if selectCB.Model().([]game.Profile)[selectCB.CurrentIndex()].Type == game.ProfileTypeMultiplayer {
+					if profileCB.Model().([]game.Profile)[profileCB.CurrentIndex()].Type == game.ProfileTypeMultiplayer {
 						migratePB.SetEnabled(true)
 					} else {
 						migratePB.SetEnabled(false)
@@ -156,7 +155,7 @@ func CreateMainWindow(h game.Handler, c client, f finder, r registryRepository) 
 								mw.SetEnabled(true)
 							}()
 
-							profile := selectCB.Model().([]game.Profile)[selectCB.CurrentIndex()]
+							profile := profileCB.Model().([]game.Profile)[profileCB.CurrentIndex()]
 							err2 := migrateProfile(h, c, profile.Key)
 							if err2 != nil {
 								walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to migrate %q to OpenSpy: %s", profile.Name, err2.Error()), walk.MsgBoxIconError)
@@ -167,20 +166,39 @@ func CreateMainWindow(h game.Handler, c client, f finder, r registryRepository) 
 					},
 				},
 			},
+			declarative.Label{
+				Text:       "Select provider",
+				TextColor:  walk.Color(win.GetSysColor(win.COLOR_CAPTIONTEXT)),
+				Background: declarative.SolidColorBrush{Color: walk.Color(win.GetSysColor(win.COLOR_BTNFACE))},
+			},
+			declarative.ComboBox{
+				AssignTo:      &providerCB,
+				DisplayMember: "Name",
+				BindingMember: "Name",
+				Name:          "Select provider",
+				ToolTipText:   "Select provider",
+				Model: []provider{
+					// Not offering BF2Hub (needs a .dll in addition to .exe changes)
+					playbf2,
+					openspy,
+					// Not offering GameSpy (obsolete, only used for reverting)
+				},
+				CurrentIndex: 1, // Select OpenSpy as default
+			},
 			declarative.GroupBox{
-				Title:  "Global actions",
-				Name:   "Global actions",
+				Title:  "Provider actions",
+				Name:   "Provider actions",
 				Layout: declarative.VBox{},
 				Children: []declarative.Widget{
 					declarative.PushButton{
 						AssignTo: &patchPB,
-						Text:     fmt.Sprintf("Patch %s to use OpenSpy", bf2ExecutableName),
+						Text:     "Apply patch",
 						OnClicked: func() {
 							// Block any actions during patching
 							mw.SetEnabled(false)
 							_ = patchPB.SetText("Patching...")
 							defer func() {
-								_ = patchPB.SetText(fmt.Sprintf("Patch %s to use OpenSpy", bf2ExecutableName))
+								_ = patchPB.SetText("Apply patch")
 								mw.SetEnabled(true)
 							}()
 
@@ -190,29 +208,30 @@ func CreateMainWindow(h game.Handler, c client, f finder, r registryRepository) 
 								return
 							}
 
-							err2 = patchBinary(f, openspy)
+							p := providerCB.Model().([]provider)[providerCB.CurrentIndex()]
+							err2 = patchBinary(f, p)
 							if err2 != nil {
 								walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to patch %s: %s", bf2ExecutableName, err2.Error()), walk.MsgBoxIconError)
 							} else {
-								walk.MsgBox(mw, "Success", fmt.Sprintf("Patched %s to use OpenSpy\n\nRevert patch before using %q to use BF2Hub again", bf2ExecutableName, bf2hubPatcherName), walk.MsgBoxIconInformation)
+								walk.MsgBox(mw, "Success", fmt.Sprintf("Patched %s to use %s", bf2ExecutableName, p.Name), walk.MsgBoxIconInformation)
 							}
 						},
 					},
 					declarative.PushButton{
 						AssignTo: &revertPB,
-						Text:     fmt.Sprintf("Revert %s to use GameSpy", bf2ExecutableName),
+						Text:     "Revert patch",
 						OnClicked: func() {
 							// Block any actions during patching
 							mw.SetEnabled(false)
 							_ = revertPB.SetText("Reverting...")
 							defer func() {
-								_ = revertPB.SetText(fmt.Sprintf("Revert %s to use GameSpy", bf2ExecutableName))
+								_ = revertPB.SetText("Revert patch")
 								mw.SetEnabled(true)
 							}()
 
 							err2 := prepareForPatch(r)
 							if err2 != nil {
-								walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to prepare for patching %s: %s", bf2ExecutableName, err2.Error()), walk.MsgBoxIconError)
+								walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to prepare for reverting %s: %s", bf2ExecutableName, err2.Error()), walk.MsgBoxIconError)
 								return
 							}
 
@@ -220,7 +239,7 @@ func CreateMainWindow(h game.Handler, c client, f finder, r registryRepository) 
 							if err2 != nil {
 								walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to patch %s: %s", bf2ExecutableName, err2.Error()), walk.MsgBoxIconError)
 							} else {
-								walk.MsgBox(mw, "Success", fmt.Sprintf("Reverted %s to to use GameSpy\n\nUse %q to use BF2Hub again", bf2ExecutableName, bf2hubPatcherName), walk.MsgBoxIconInformation)
+								walk.MsgBox(mw, "Success", fmt.Sprintf("Reverted %s to use GameSpy\n\nYou can now use provider-specific patchers again (e.g. BF2Hub Patcher)", bf2ExecutableName), walk.MsgBoxIconInformation)
 							}
 						},
 					},
@@ -245,8 +264,8 @@ func CreateMainWindow(h game.Handler, c client, f finder, r registryRepository) 
 		walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to load list of available profiles: %s", err.Error()), walk.MsgBoxIconError)
 		return nil, err
 	}
-	_ = selectCB.SetModel(profiles)
-	_ = selectCB.SetCurrentIndex(selected)
+	_ = profileCB.SetModel(profiles)
+	_ = profileCB.SetCurrentIndex(selected)
 
 	return mw, nil
 }
@@ -516,16 +535,36 @@ func getModifications(old, new provider) []modification {
 		},
 	}
 
-	// Backend-specific modifications
-	switch old.Name {
-	case playbf2.Name:
+	// Semi backend-specific modifications (common for some backends)
+	// Special case for PlayBF2: They remove the numeric placeholder/verb ("%d") in addition to changing the hostname
+	if old.Name == playbf2.Name {
+		// Remove "%d" when currently patched for PlayBF2
 		modifications = append(modifications, modification{
-			// PlayBF2 removes the numeric placeholder/verb ("%d") in addition to the hostname
 			Old:    []byte(fmt.Sprintf("%%s.ms.%s", old.Fingerprint.Hostname)),
 			New:    []byte(fmt.Sprintf("%%s.ms%%d.%s", new.Fingerprint.Hostname)),
 			Length: 19,
 			Count:  1,
 		})
+	} else if new.Name == playbf2.Name {
+		// Add "%d" when patching to PlayBF2
+		modifications = append(modifications, modification{
+			Old:    []byte(fmt.Sprintf("%%s.ms%%d.%s", old.Fingerprint.Hostname)),
+			New:    []byte(fmt.Sprintf("%%s.ms.%s", new.Fingerprint.Hostname)),
+			Length: 19,
+			Count:  1,
+		})
+	} else {
+		// Symmetrical change for all other providers
+		modifications = append(modifications, modification{
+			Old:    []byte(fmt.Sprintf("%%s.ms%%d.%s", old.Fingerprint.Hostname)),
+			New:    []byte(fmt.Sprintf("%%s.ms%%d.%s", new.Fingerprint.Hostname)),
+			Length: 19,
+			Count:  1,
+		})
+	}
+
+	// Truly backend-specific modifications (unique to a single backend to be applied/reverted)
+	switch old.Name {
 	case bf2hub.Name:
 		modifications = append(modifications, modification{
 			Old:    []byte("bf2hbc.dll"),
@@ -534,14 +573,17 @@ func getModifications(old, new provider) []modification {
 			Count:  1,
 		},
 		)
-		fallthrough // Falling through to also apply the below modification
-	default:
+	}
+
+	switch new.Name {
+	case bf2hub.Name:
 		modifications = append(modifications, modification{
-			Old:    []byte(fmt.Sprintf("%%s.ms%%d.%s", old.Fingerprint.Hostname)),
-			New:    []byte(fmt.Sprintf("%%s.ms%%d.%s", new.Fingerprint.Hostname)),
-			Length: 19,
+			Old:    []byte("WS2_32.dll"),
+			New:    []byte("bf2hbc.dll"),
+			Length: 10,
 			Count:  1,
-		})
+		},
+		)
 	}
 
 	return modifications
