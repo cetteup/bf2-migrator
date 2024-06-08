@@ -417,12 +417,16 @@ func patchBinary(f finder, new provider) error {
 	modifications := getModifications(old, new)
 	modified := original[:]
 	for _, m := range modifications {
-		count := bytes.Count(modified, m.Old)
+		o := padRight(m.Old, 0, m.Length)
+		n := padRight(m.New, 0, m.Length)
+
+		count := bytes.Count(modified, o)
 		if count != m.Count {
 			return fmt.Errorf("binary contains unknown modifications, revert changes first")
 		}
 
-		modified = bytes.ReplaceAll(modified, m.Old, m.New)
+		// Replace all occurrences, making sure to keep the binary the same length
+		modified = bytes.ReplaceAll(modified, o, n)
 	}
 
 	// Any changes to the length would break the binary
@@ -445,60 +449,70 @@ func determineCurrentlyUsedProvider(b []byte) (provider, error) {
 }
 
 type modification struct {
-	Old   []byte
-	New   []byte
-	Count int
+	Old    []byte
+	New    []byte
+	Length int
+	Count  int
 }
 
 func getModifications(old, new provider) []modification {
 	// Default modifications, required for patching any provider
 	modifications := []modification{
 		{
-			Old:   old.Fingerprint.HostsPath,
-			New:   new.Fingerprint.HostsPath,
-			Count: 1,
+			Old:    old.Fingerprint.HostsPath,
+			New:    new.Fingerprint.HostsPath,
+			Length: 18,
+			Count:  1,
 		},
 		{
-			Old:   padRight([]byte(fmt.Sprintf("gamestats.%s", old.Fingerprint.Hostname)), 0, 21),
-			New:   []byte(fmt.Sprintf("gamestats.%s", new.Fingerprint.Hostname)),
-			Count: 2,
+			Old:    []byte(fmt.Sprintf("gamestats.%s", old.Fingerprint.Hostname)),
+			New:    []byte(fmt.Sprintf("gamestats.%s", new.Fingerprint.Hostname)),
+			Length: 21,
+			Count:  2,
 		},
 		{
-			Old:   padRight([]byte(fmt.Sprintf("http://stage-net.%s/bf2/getplayerinfo.aspx?pid=", old.Fingerprint.Hostname)), 0, 56),
-			New:   []byte(fmt.Sprintf("http://stage-net.%s/bf2/getplayerinfo.aspx?pid=", new.Fingerprint.Hostname)),
-			Count: 1,
+			Old:    []byte(fmt.Sprintf("http://stage-net.%s/bf2/getplayerinfo.aspx?pid=", old.Fingerprint.Hostname)),
+			New:    []byte(fmt.Sprintf("http://stage-net.%s/bf2/getplayerinfo.aspx?pid=", new.Fingerprint.Hostname)),
+			Length: 56,
+			Count:  1,
 		},
 		{
-			// "BF2Web.%s" would also match the below modification and break the url, so add a trailing nil-byte to
-			// avoid the partial match
-			Old:   padRight([]byte(fmt.Sprintf("BF2Web.%s", old.Fingerprint.Hostname)), 0, 19),
-			New:   padRight([]byte(fmt.Sprintf("BF2Web.%s", new.Fingerprint.Hostname)), 0, 19),
-			Count: 1,
+			Old: []byte(fmt.Sprintf("BF2Web.%s", old.Fingerprint.Hostname)),
+			New: []byte(fmt.Sprintf("BF2Web.%s", new.Fingerprint.Hostname)),
+			// Actual length of original is 18. However, "BF2Web.%s" would also match the below modification
+			// and break the url, so add another trailing nil-byte to avoid the partial match
+			Length: 19,
+			Count:  1,
 		},
 		{
-			Old:   padRight([]byte(fmt.Sprintf("http://BF2Web.%s/ASP/", old.Fingerprint.Hostname)), 0, 30),
-			New:   []byte(fmt.Sprintf("http://BF2Web.%s/ASP/", new.Fingerprint.Hostname)),
-			Count: 1,
+			Old:    []byte(fmt.Sprintf("http://BF2Web.%s/ASP/", old.Fingerprint.Hostname)),
+			New:    []byte(fmt.Sprintf("http://BF2Web.%s/ASP/", new.Fingerprint.Hostname)),
+			Length: 30,
+			Count:  1,
 		},
 		{
-			Old:   padRight([]byte(fmt.Sprintf("%%s.available.%s", old.Fingerprint.Hostname)), 0, 24),
-			New:   []byte(fmt.Sprintf("%%s.available.%s", new.Fingerprint.Hostname)),
-			Count: 1,
+			Old:    []byte(fmt.Sprintf("%%s.available.%s", old.Fingerprint.Hostname)),
+			New:    []byte(fmt.Sprintf("%%s.available.%s", new.Fingerprint.Hostname)),
+			Length: 24,
+			Count:  1,
 		},
 		{
-			Old:   padRight([]byte(fmt.Sprintf("%%s.master.%s", old.Fingerprint.Hostname)), 0, 21),
-			New:   []byte(fmt.Sprintf("%%s.master.%s", new.Fingerprint.Hostname)),
-			Count: 1,
+			Old:    []byte(fmt.Sprintf("%%s.master.%s", old.Fingerprint.Hostname)),
+			New:    []byte(fmt.Sprintf("%%s.master.%s", new.Fingerprint.Hostname)),
+			Length: 21,
+			Count:  1,
 		},
 		{
-			Old:   padRight([]byte(fmt.Sprintf("gpcm.%s", old.Fingerprint.Hostname)), 0, 16),
-			New:   []byte(fmt.Sprintf("gpcm.%s", new.Fingerprint.Hostname)),
-			Count: 1,
+			Old:    []byte(fmt.Sprintf("gpcm.%s", old.Fingerprint.Hostname)),
+			New:    []byte(fmt.Sprintf("gpcm.%s", new.Fingerprint.Hostname)),
+			Length: 16,
+			Count:  1,
 		},
 		{
-			Old:   padRight([]byte(fmt.Sprintf("gpsp.%s", old.Fingerprint.Hostname)), 0, 16),
-			New:   []byte(fmt.Sprintf("gpsp.%s", new.Fingerprint.Hostname)),
-			Count: 1,
+			Old:    []byte(fmt.Sprintf("gpsp.%s", old.Fingerprint.Hostname)),
+			New:    []byte(fmt.Sprintf("gpsp.%s", new.Fingerprint.Hostname)),
+			Length: 16,
+			Count:  1,
 		},
 	}
 
@@ -507,34 +521,39 @@ func getModifications(old, new provider) []modification {
 	case bf2hub.Name:
 		modifications = append(modifications,
 			modification{
-				Old:   []byte("bf2hbc.dll"),
-				New:   []byte("WS2_32.dll"),
-				Count: 1,
+				Old:    []byte("bf2hbc.dll"),
+				New:    []byte("WS2_32.dll"),
+				Length: 10,
+				Count:  1,
 			},
 			modification{
-				Old:   padRight([]byte(fmt.Sprintf("%%s.ms%%d.%s", old.Fingerprint.Hostname)), 0, 19),
-				New:   []byte(fmt.Sprintf("%%s.ms%%d.%s", new.Fingerprint.Hostname)),
-				Count: 1,
+				Old:    []byte(fmt.Sprintf("%%s.ms%%d.%s", old.Fingerprint.Hostname)),
+				New:    []byte(fmt.Sprintf("%%s.ms%%d.%s", new.Fingerprint.Hostname)),
+				Length: 19,
+				Count:  1,
 			},
 		)
 	case playbf2.Name:
 		modifications = append(modifications, modification{
 			// PlayBF2 removes the numeric placeholder/verb ("%d") in addition to the hostname
-			Old:   padRight([]byte(fmt.Sprintf("%%s.ms.%s", old.Fingerprint.Hostname)), 0, 19),
-			New:   []byte(fmt.Sprintf("%%s.ms%%d.%s", new.Fingerprint.Hostname)),
-			Count: 1,
+			Old:    []byte(fmt.Sprintf("%%s.ms.%s", old.Fingerprint.Hostname)),
+			New:    []byte(fmt.Sprintf("%%s.ms%%d.%s", new.Fingerprint.Hostname)),
+			Length: 19,
+			Count:  1,
 		})
 	case openspy.Name:
 		modifications = append(modifications, modification{
-			Old:   padRight([]byte(fmt.Sprintf("%%s.ms%%d.%s", old.Fingerprint.Hostname)), 0, 19),
-			New:   []byte(fmt.Sprintf("%%s.ms%%d.%s", new.Fingerprint.Hostname)),
-			Count: 1,
+			Old:    []byte(fmt.Sprintf("%%s.ms%%d.%s", old.Fingerprint.Hostname)),
+			New:    []byte(fmt.Sprintf("%%s.ms%%d.%s", new.Fingerprint.Hostname)),
+			Length: 19,
+			Count:  1,
 		})
 	case gamespy.Name:
 		modifications = append(modifications, modification{
-			Old:   padRight([]byte(fmt.Sprintf("%%s.ms%%d.%s", old.Fingerprint.Hostname)), 0, 19),
-			New:   []byte(fmt.Sprintf("%%s.ms%%d.%s", new.Fingerprint.Hostname)),
-			Count: 1,
+			Old:    []byte(fmt.Sprintf("%%s.ms%%d.%s", old.Fingerprint.Hostname)),
+			New:    []byte(fmt.Sprintf("%%s.ms%%d.%s", new.Fingerprint.Hostname)),
+			Length: 19,
+			Count:  1,
 		})
 	}
 
