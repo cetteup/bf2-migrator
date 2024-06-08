@@ -518,21 +518,6 @@ func getModifications(old, new provider) []modification {
 
 	// Backend-specific modifications
 	switch old.Name {
-	case bf2hub.Name:
-		modifications = append(modifications,
-			modification{
-				Old:    []byte("bf2hbc.dll"),
-				New:    []byte("WS2_32.dll"),
-				Length: 10,
-				Count:  1,
-			},
-			modification{
-				Old:    []byte(fmt.Sprintf("%%s.ms%%d.%s", old.Fingerprint.Hostname)),
-				New:    []byte(fmt.Sprintf("%%s.ms%%d.%s", new.Fingerprint.Hostname)),
-				Length: 19,
-				Count:  1,
-			},
-		)
 	case playbf2.Name:
 		modifications = append(modifications, modification{
 			// PlayBF2 removes the numeric placeholder/verb ("%d") in addition to the hostname
@@ -541,14 +526,16 @@ func getModifications(old, new provider) []modification {
 			Length: 19,
 			Count:  1,
 		})
-	case openspy.Name:
+	case bf2hub.Name:
 		modifications = append(modifications, modification{
-			Old:    []byte(fmt.Sprintf("%%s.ms%%d.%s", old.Fingerprint.Hostname)),
-			New:    []byte(fmt.Sprintf("%%s.ms%%d.%s", new.Fingerprint.Hostname)),
-			Length: 19,
+			Old:    []byte("bf2hbc.dll"),
+			New:    []byte("WS2_32.dll"),
+			Length: 10,
 			Count:  1,
-		})
-	case gamespy.Name:
+		},
+		)
+		fallthrough // Falling through to also apply the below modification
+	default:
 		modifications = append(modifications, modification{
 			Old:    []byte(fmt.Sprintf("%%s.ms%%d.%s", old.Fingerprint.Hostname)),
 			New:    []byte(fmt.Sprintf("%%s.ms%%d.%s", new.Fingerprint.Hostname)),
