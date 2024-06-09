@@ -23,8 +23,8 @@ import (
 )
 
 const (
-	windowWidth  = 250
-	windowHeight = 290
+	windowWidth  = 290
+	windowHeight = 350
 
 	bf2ExecutableName    = "BF2.exe"
 	bf2hubExecutableName = "bf2hub.exe"
@@ -100,11 +100,19 @@ func CreateMainWindow(h game.Handler, c client, f finder, r registryRepository) 
 	var mw *walk.MainWindow
 	var profileCB *walk.ComboBox
 	var migratePB *walk.PushButton
+	var pathTE *walk.TextEdit
 	var providerCB *walk.ComboBox
 	var patchPB *walk.PushButton
 	var revertPB *walk.PushButton
 
-	if err := (declarative.MainWindow{
+	enablePatch := func(path string) {
+		_ = pathTE.SetText(path)
+		_ = pathTE.SetToolTipText(path)
+		patchPB.SetEnabled(true)
+		revertPB.SetEnabled(true)
+	}
+
+	if err = (declarative.MainWindow{
 		AssignTo: &mw,
 		Title:    "BF2 migrator",
 		Name:     "BF2 migrator",
@@ -118,31 +126,31 @@ func CreateMainWindow(h game.Handler, c client, f finder, r registryRepository) 
 		Icon:    icon,
 		ToolBar: declarative.ToolBar{},
 		Children: []declarative.Widget{
-			declarative.Label{
-				Text:       "Select profile",
-				TextColor:  walk.Color(win.GetSysColor(win.COLOR_CAPTIONTEXT)),
-				Background: declarative.SolidColorBrush{Color: walk.Color(win.GetSysColor(win.COLOR_BTNFACE))},
-			},
-			declarative.ComboBox{
-				AssignTo:      &profileCB,
-				DisplayMember: "Name",
-				BindingMember: "Key",
-				Name:          "Select profile",
-				ToolTipText:   "Select profile",
-				OnCurrentIndexChanged: func() {
-					// Password actions cannot be used with singleplayer profiles, since those don't have passwords
-					if profileCB.Model().([]game.Profile)[profileCB.CurrentIndex()].Type == game.ProfileTypeMultiplayer {
-						migratePB.SetEnabled(true)
-					} else {
-						migratePB.SetEnabled(false)
-					}
-				},
-			},
 			declarative.GroupBox{
-				Title:  "Profile actions",
-				Name:   "Profile actions",
+				Title:  "Migrate",
+				Name:   "Migrate",
 				Layout: declarative.VBox{},
 				Children: []declarative.Widget{
+					declarative.Label{
+						Text:       "Select profile",
+						TextColor:  walk.Color(win.GetSysColor(win.COLOR_CAPTIONTEXT)),
+						Background: declarative.SolidColorBrush{Color: walk.Color(win.GetSysColor(win.COLOR_BTNFACE))},
+					},
+					declarative.ComboBox{
+						AssignTo:      &profileCB,
+						DisplayMember: "Name",
+						BindingMember: "Key",
+						Name:          "Select profile",
+						ToolTipText:   "Select profile",
+						OnCurrentIndexChanged: func() {
+							// Password actions cannot be used with singleplayer profiles, since those don't have passwords
+							if profileCB.Model().([]game.Profile)[profileCB.CurrentIndex()].Type == game.ProfileTypeMultiplayer {
+								migratePB.SetEnabled(true)
+							} else {
+								migratePB.SetEnabled(false)
+							}
+						},
+					},
 					declarative.PushButton{
 						AssignTo: &migratePB,
 						Text:     "Migrate to OpenSpy",
@@ -166,81 +174,140 @@ func CreateMainWindow(h game.Handler, c client, f finder, r registryRepository) 
 					},
 				},
 			},
-			declarative.Label{
-				Text:       "Select provider",
-				TextColor:  walk.Color(win.GetSysColor(win.COLOR_CAPTIONTEXT)),
-				Background: declarative.SolidColorBrush{Color: walk.Color(win.GetSysColor(win.COLOR_BTNFACE))},
-			},
-			declarative.ComboBox{
-				AssignTo:      &providerCB,
-				DisplayMember: "Name",
-				BindingMember: "Name",
-				Name:          "Select provider",
-				ToolTipText:   "Select provider",
-				Model: []provider{
-					// Not offering BF2Hub (needs a .dll in addition to .exe changes)
-					playbf2,
-					openspy,
-					// Not offering GameSpy (obsolete, only used for reverting)
-				},
-				CurrentIndex: 1, // Select OpenSpy as default
-			},
 			declarative.GroupBox{
-				Title:  "Provider actions",
-				Name:   "Provider actions",
+				Title:  "Patch",
+				Name:   "Patch",
 				Layout: declarative.VBox{},
 				Children: []declarative.Widget{
-					declarative.PushButton{
-						AssignTo: &patchPB,
-						Text:     "Apply patch",
-						OnClicked: func() {
-							// Block any actions during patching
-							mw.SetEnabled(false)
-							_ = patchPB.SetText("Patching...")
-							defer func() {
-								_ = patchPB.SetText("Apply patch")
-								mw.SetEnabled(true)
-							}()
+					declarative.Label{
+						Text:       "Installation folder",
+						TextColor:  walk.Color(win.GetSysColor(win.COLOR_CAPTIONTEXT)),
+						Background: declarative.SolidColorBrush{Color: walk.Color(win.GetSysColor(win.COLOR_BTNFACE))},
+					},
+					declarative.TextEdit{
+						AssignTo: &pathTE,
+						Name:     "Installation folder",
+						ReadOnly: true,
+					},
+					declarative.HSplitter{
+						Children: []declarative.Widget{
+							declarative.PushButton{
+								Text: "Detect",
+								OnClicked: func() {
+									detected, err2 := detectInstallPath(f)
+									if err2 != nil {
+										walk.MsgBox(mw, "Warning", "Could not detect game installation folder, please choose the path manually", walk.MsgBoxIconWarning)
+										return
+									}
 
-							err2 := prepareForPatch(r)
-							if err2 != nil {
-								walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to prepare for patching %s: %s", bf2ExecutableName, err2.Error()), walk.MsgBoxIconError)
-								return
-							}
+									enablePatch(detected)
+								},
+							},
+							declarative.PushButton{
+								Text: "Choose",
+								OnClicked: func() {
+									dlg := &walk.FileDialog{
+										Title: "Choose installation folder",
+									}
 
-							p := providerCB.Model().([]provider)[providerCB.CurrentIndex()]
-							err2 = patchBinary(f, p)
-							if err2 != nil {
-								walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to patch %s: %s", bf2ExecutableName, err2.Error()), walk.MsgBoxIconError)
-							} else {
-								walk.MsgBox(mw, "Success", fmt.Sprintf("Patched %s to use %s", bf2ExecutableName, p.Name), walk.MsgBoxIconInformation)
-							}
+									ok, err2 := dlg.ShowBrowseFolder(mw)
+									if err2 != nil {
+										walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to choose installation folder: %s", err2.Error()), walk.MsgBoxIconError)
+										return
+									} else if !ok {
+										// User canceled dialog
+										return
+									}
+
+									enablePatch(dlg.FilePath)
+								},
+							},
 						},
 					},
-					declarative.PushButton{
-						AssignTo: &revertPB,
-						Text:     "Revert patch",
-						OnClicked: func() {
-							// Block any actions during patching
-							mw.SetEnabled(false)
-							_ = revertPB.SetText("Reverting...")
-							defer func() {
-								_ = revertPB.SetText("Revert patch")
-								mw.SetEnabled(true)
-							}()
+					declarative.VSpacer{Size: 1},
+					declarative.Composite{
+						Layout: declarative.VBox{
+							MarginsZero: true,
+						},
+						Children: []declarative.Widget{
+							declarative.Label{
+								Text:       "Select provider",
+								TextColor:  walk.Color(win.GetSysColor(win.COLOR_CAPTIONTEXT)),
+								Background: declarative.SolidColorBrush{Color: walk.Color(win.GetSysColor(win.COLOR_BTNFACE))},
+							},
+							declarative.ComboBox{
+								AssignTo:      &providerCB,
+								DisplayMember: "Name",
+								BindingMember: "Name",
+								Name:          "Select provider",
+								ToolTipText:   "Select provider",
+								Model: []provider{
+									// Not offering BF2Hub (needs a .dll in addition to .exe changes)
+									playbf2,
+									openspy,
+									// Not offering GameSpy (obsolete, only used for reverting)
+								},
+								CurrentIndex: 1, // Select OpenSpy as default
+							},
+							declarative.HSplitter{
+								Children: []declarative.Widget{
+									declarative.PushButton{
+										AssignTo: &patchPB,
+										Text:     "Apply patch",
+										Enabled:  false,
+										OnClicked: func() {
+											// Block any actions during patching
+											mw.SetEnabled(false)
+											_ = patchPB.SetText("Patching...")
+											defer func() {
+												_ = patchPB.SetText("Apply patch")
+												mw.SetEnabled(true)
+											}()
 
-							err2 := prepareForPatch(r)
-							if err2 != nil {
-								walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to prepare for reverting %s: %s", bf2ExecutableName, err2.Error()), walk.MsgBoxIconError)
-								return
-							}
+											err2 := prepareForPatch(r)
+											if err2 != nil {
+												walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to prepare for patching %s: %s", bf2ExecutableName, err2.Error()), walk.MsgBoxIconError)
+												return
+											}
 
-							err2 = patchBinary(f, gamespy)
-							if err2 != nil {
-								walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to patch %s: %s", bf2ExecutableName, err2.Error()), walk.MsgBoxIconError)
-							} else {
-								walk.MsgBox(mw, "Success", fmt.Sprintf("Reverted %s to use GameSpy\n\nYou can now use provider-specific patchers again (e.g. BF2Hub Patcher)", bf2ExecutableName), walk.MsgBoxIconInformation)
-							}
+											p := providerCB.Model().([]provider)[providerCB.CurrentIndex()]
+											err2 = patchBinary(pathTE.Text(), p)
+											if err2 != nil {
+												walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to patch %s: %s", bf2ExecutableName, err2.Error()), walk.MsgBoxIconError)
+											} else {
+												walk.MsgBox(mw, "Success", fmt.Sprintf("Patched %s to use %s", bf2ExecutableName, p.Name), walk.MsgBoxIconInformation)
+											}
+										},
+									},
+									declarative.PushButton{
+										AssignTo: &revertPB,
+										Text:     "Revert patch",
+										Enabled:  false,
+										OnClicked: func() {
+											// Block any actions during patching
+											mw.SetEnabled(false)
+											_ = revertPB.SetText("Reverting...")
+											defer func() {
+												_ = revertPB.SetText("Revert patch")
+												mw.SetEnabled(true)
+											}()
+
+											err2 := prepareForPatch(r)
+											if err2 != nil {
+												walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to prepare for reverting %s: %s", bf2ExecutableName, err2.Error()), walk.MsgBoxIconError)
+												return
+											}
+
+											err2 = patchBinary(pathTE.Text(), gamespy)
+											if err2 != nil {
+												walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to patch %s: %s", bf2ExecutableName, err2.Error()), walk.MsgBoxIconError)
+											} else {
+												walk.MsgBox(mw, "Success", fmt.Sprintf("Reverted %s to use GameSpy\n\nYou can now use provider-specific patchers again (e.g. BF2Hub Patcher)", bf2ExecutableName), walk.MsgBoxIconInformation)
+											}
+										},
+									},
+								},
+							},
 						},
 					},
 				},
@@ -266,6 +333,12 @@ func CreateMainWindow(h game.Handler, c client, f finder, r registryRepository) 
 	}
 	_ = profileCB.SetModel(profiles)
 	_ = profileCB.SetCurrentIndex(selected)
+
+	// Automatically try to detect install path once, pre-filling path if path is detected
+	detected, err := detectInstallPath(f)
+	if err == nil {
+		enablePatch(detected)
+	}
 
 	return mw, nil
 }
@@ -390,7 +463,7 @@ func prepareForPatch(r registryRepository) error {
 	return nil
 }
 
-func patchBinary(f finder, new provider) error {
+func detectInstallPath(f finder) (string, error) {
 	// Copied from https://github.com/cetteup/joinme.click-launcher/blob/089fb595adc426aab775fe40165431501a5c38c3/internal/titles/bf2.go#L37
 	dir, err := f.GetInstallDirFromSomewhere([]software_finder.Config{
 		{
@@ -407,9 +480,13 @@ func patchBinary(f finder, new provider) error {
 		},
 	})
 	if err != nil {
-		return fmt.Errorf("failed to determine Battlefield 2 install directory: %w", err)
+		return "", fmt.Errorf("failed to determine Battlefield 2 install directory: %w", err)
 	}
 
+	return dir, err
+}
+
+func patchBinary(dir string, new provider) error {
 	path := filepath.Join(dir, bf2ExecutableName)
 
 	stats, err := os.Stat(path)
