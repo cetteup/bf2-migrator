@@ -2,13 +2,13 @@
   "FixedFileInfo": {
     "FileVersion": {
       "Major": 0,
-      "Minor": 4,
+      "Minor": 5,
       "Patch": 0,
       "Build": 0
     },
     "ProductVersion": {
       "Major": 0,
-      "Minor": 4,
+      "Minor": 5,
       "Patch": 0,
       "Build": 0
     },
@@ -22,14 +22,14 @@
     "Comments": "",
     "CompanyName": "dogclan",
     "FileDescription": "bf2-migrator",
-    "FileVersion": "v0.4.0.0",
+    "FileVersion": "v0.5.0.0",
     "InternalName": "",
     "LegalCopyright": "",
     "LegalTrademarks": "",
     "OriginalFilename": "",
     "PrivateBuild": "",
     "ProductName": "bf2-migrator",
-    "ProductVersion": "v0.4.0.0",
+    "ProductVersion": "v0.5.0.0",
     "SpecialBuild": ""
   },
   "VarFileInfo": {
