@@ -1,4 +1,4 @@
-module github.com/dogclan/bf2-migrator
+module github.com/cetteup/bf2-migrator
 
 go 1.18
 

@@ -13,8 +13,8 @@ import (
 
 	"github.com/cetteup/conman/pkg/handler"
 
-	"github.com/dogclan/bf2-migrator/cmd/bf2-migrator/internal/gui"
-	"github.com/dogclan/bf2-migrator/pkg/openspy"
+	"github.com/cetteup/bf2-migrator/cmd/bf2-migrator/internal/gui"
+	"github.com/cetteup/bf2-migrator/pkg/openspy"
 )
 
 func init() {

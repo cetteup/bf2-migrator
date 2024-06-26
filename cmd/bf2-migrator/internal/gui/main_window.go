@@ -19,7 +19,7 @@ import (
 	"github.com/cetteup/conman/pkg/game"
 	"github.com/cetteup/joinme.click-launcher/pkg/software_finder"
 
-	api "github.com/dogclan/bf2-migrator/pkg/openspy"
+	api "github.com/cetteup/bf2-migrator/pkg/openspy"
 )
 
 const (
