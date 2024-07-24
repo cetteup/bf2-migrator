@@ -1,12 +1,9 @@
 package gui
 
 import (
-	"bytes"
 	_ "embed"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/cetteup/conman/pkg/game/bf2"
 	"github.com/lxn/walk"
@@ -19,60 +16,17 @@ import (
 	"github.com/cetteup/conman/pkg/game"
 	"github.com/cetteup/joinme.click-launcher/pkg/software_finder"
 
+	"github.com/cetteup/bf2-migrator/cmd/bf2-migrator/internal/patchable"
 	api "github.com/cetteup/bf2-migrator/pkg/openspy"
+	"github.com/cetteup/bf2-migrator/pkg/patch"
 )
 
 const (
 	windowWidth  = 290
 	windowHeight = 350
 
-	bf2ExecutableName    = "BF2.exe"
 	bf2hubExecutableName = "bf2hub.exe"
 )
-
-type provider struct {
-	Name        string
-	Fingerprint fingerprint
-}
-
-type fingerprint struct {
-	Hostname   []byte
-	HostsPath  []byte
-	Additional [][]byte
-}
-
-var bf2hub = provider{
-	Name: "BF2Hub",
-	Fingerprint: fingerprint{
-		// BF2Hub does not modify the hostname, so modify based on the GameSpy hostname
-		Hostname:  []byte("gamespy.com"),
-		HostsPath: []byte("\\drivers\\xtc\\hosts"),
-		Additional: [][]byte{
-			[]byte("bf2hbc.dll"),
-		},
-	},
-}
-var playbf2 = provider{
-	Name: "PlayBF2",
-	Fingerprint: fingerprint{
-		Hostname:  []byte("playbf2.ru"),
-		HostsPath: []byte("\\drivers\\etc\\hasts"),
-	},
-}
-var openspy = provider{
-	Name: "OpenSpy",
-	Fingerprint: fingerprint{
-		Hostname:  []byte("openspy.net"),
-		HostsPath: []byte("\\drivers\\etz\\hosts"),
-	},
-}
-var gamespy = provider{
-	Name: "GameSpy",
-	Fingerprint: fingerprint{
-		Hostname:  []byte("gamespy.com"),
-		HostsPath: []byte("\\drivers\\etc\\hosts"),
-	},
-}
 
 type client interface {
 	CreateAccount(email, password string, partnerCode int) error
@@ -86,6 +40,11 @@ type finder interface {
 
 type registryRepository interface {
 	OpenKey(k registry.Key, path string, access uint32, cb func(key registry.Key) error) error
+}
+
+type providerCBOption struct {
+	Name     string
+	Provider patch.Provider
 }
 
 func CreateMainWindow(h game.Handler, c client, f finder, r registryRepository) (*walk.MainWindow, error) {
@@ -110,6 +69,10 @@ func CreateMainWindow(h game.Handler, c client, f finder, r registryRepository) 
 		_ = pathTE.SetToolTipText(path)
 		patchPB.SetEnabled(true)
 		revertPB.SetEnabled(true)
+	}
+
+	patchables := []patch.Patchable{
+		patchable.GameExecutable{},
 	}
 
 	if err = (declarative.MainWindow{
@@ -238,13 +201,19 @@ func CreateMainWindow(h game.Handler, c client, f finder, r registryRepository) 
 							declarative.ComboBox{
 								AssignTo:      &providerCB,
 								DisplayMember: "Name",
-								BindingMember: "Name",
+								BindingMember: "Provider",
 								Name:          "Select provider",
 								ToolTipText:   "Select provider",
-								Model: []provider{
+								Model: []providerCBOption{
 									// Not offering BF2Hub (needs a .dll in addition to .exe changes)
-									playbf2,
-									openspy,
+									{
+										Name:     string(patchable.ProviderPlayBF2),
+										Provider: patchable.ProviderPlayBF2,
+									},
+									{
+										Name:     string(patchable.ProviderOpenSpy),
+										Provider: patchable.ProviderOpenSpy,
+									},
 									// Not offering GameSpy (obsolete, only used for reverting)
 								},
 								CurrentIndex: 1, // Select OpenSpy as default
@@ -266,16 +235,16 @@ func CreateMainWindow(h game.Handler, c client, f finder, r registryRepository) 
 
 											err2 := prepareForPatch(r)
 											if err2 != nil {
-												walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to prepare for patching %s: %s", bf2ExecutableName, err2.Error()), walk.MsgBoxIconError)
+												walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to prepare for patching: %s", err2.Error()), walk.MsgBoxIconError)
 												return
 											}
 
-											p := providerCB.Model().([]provider)[providerCB.CurrentIndex()]
-											err2 = patchBinary(pathTE.Text(), p)
+											selected := providerCB.Model().([]providerCBOption)[providerCB.CurrentIndex()]
+											err2 = patchAll(patchables, pathTE.Text(), selected.Provider)
 											if err2 != nil {
-												walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to patch %s: %s", bf2ExecutableName, err2.Error()), walk.MsgBoxIconError)
+												walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to patch %s", err2.Error()), walk.MsgBoxIconError)
 											} else {
-												walk.MsgBox(mw, "Success", fmt.Sprintf("Patched %s to use %s", bf2ExecutableName, p.Name), walk.MsgBoxIconInformation)
+												walk.MsgBox(mw, "Success", fmt.Sprintf("Patched game to use %s", selected.Name), walk.MsgBoxIconInformation)
 											}
 										},
 									},
@@ -294,15 +263,15 @@ func CreateMainWindow(h game.Handler, c client, f finder, r registryRepository) 
 
 											err2 := prepareForPatch(r)
 											if err2 != nil {
-												walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to prepare for reverting %s: %s", bf2ExecutableName, err2.Error()), walk.MsgBoxIconError)
+												walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to prepare for reverting: %s", err2.Error()), walk.MsgBoxIconError)
 												return
 											}
 
-											err2 = patchBinary(pathTE.Text(), gamespy)
+											err2 = patchAll(patchables, pathTE.Text(), patchable.ProviderGameSpy)
 											if err2 != nil {
-												walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to patch %s: %s", bf2ExecutableName, err2.Error()), walk.MsgBoxIconError)
+												walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to patch %s", err2.Error()), walk.MsgBoxIconError)
 											} else {
-												walk.MsgBox(mw, "Success", fmt.Sprintf("Reverted %s to use GameSpy\n\nYou can now use provider-specific patchers again (e.g. BF2Hub Patcher)", bf2ExecutableName), walk.MsgBoxIconInformation)
+												walk.MsgBox(mw, "Success", "Reverted game to use GameSpy\n\nYou can now use provider-specific patchers again (e.g. BF2Hub Patcher)", walk.MsgBoxIconInformation)
 											}
 										},
 									},
@@ -426,7 +395,7 @@ func prepareForPatch(r registryRepository) error {
 	killed := map[int]string{}
 	for _, process := range processes {
 		executable := process.Executable()
-		if executable == bf2ExecutableName || executable == bf2hubExecutableName {
+		if executable == patchable.GameExecutableName || executable == bf2hubExecutableName {
 			pid := process.Pid()
 			if err = killProcess(pid); err != nil {
 				return fmt.Errorf("failed to kill process %q: %s", executable, err)
@@ -486,182 +455,12 @@ func detectInstallPath(f finder) (string, error) {
 	return dir, err
 }
 
-func patchBinary(dir string, new provider) error {
-	path := filepath.Join(dir, bf2ExecutableName)
-
-	stats, err := os.Stat(path)
-	if err != nil {
-		return err
-	}
-
-	original, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-
-	// Detect "old"/current provider based on what's in the binary
-	old, err := determineCurrentlyUsedProvider(original)
-	if err != nil {
-		return err
-	}
-
-	// No need to patch if binary is already patched as desired
-	if new.Name == old.Name {
-		return nil
-	}
-
-	modifications := getModifications(old, new)
-	modified := original[:]
-	for _, m := range modifications {
-		o := padRight(m.Old, 0, m.Length)
-		n := padRight(m.New, 0, m.Length)
-
-		count := bytes.Count(modified, o)
-		if count != m.Count {
-			return fmt.Errorf("binary contains unknown modifications, revert changes first")
-		}
-
-		// Replace all occurrences, making sure to keep the binary the same length
-		modified = bytes.ReplaceAll(modified, o, n)
-	}
-
-	// Any changes to the length would break the binary
-	if len(modified) != len(original) {
-		return fmt.Errorf("length of modified binary does not match length of original")
-	}
-
-	return os.WriteFile(path, modified, stats.Mode())
-}
-
-func determineCurrentlyUsedProvider(b []byte) (provider, error) {
-	for _, p := range []provider{bf2hub, playbf2, openspy, gamespy} {
-		ridges := append(p.Fingerprint.Additional, p.Fingerprint.Hostname, p.Fingerprint.HostsPath)
-		if containsAll(b, ridges) {
-			return p, nil
+func patchAll(patchables []patch.Patchable, dir string, new patch.Provider) error {
+	for _, p := range patchables {
+		if err := patch.Patch(p, dir, new); err != nil {
+			return fmt.Errorf("%s: %w", p.GetFileName(), err)
 		}
 	}
 
-	return provider{}, fmt.Errorf("binary contains unknown/mixed modifications, revert changes first")
-}
-
-type modification struct {
-	Old    []byte
-	New    []byte
-	Length int
-	Count  int
-}
-
-func getModifications(old, new provider) []modification {
-	// Default modifications, required for patching any provider
-	modifications := []modification{
-		{
-			Old:    old.Fingerprint.HostsPath,
-			New:    new.Fingerprint.HostsPath,
-			Length: 18,
-			Count:  1,
-		},
-		{
-			Old:    []byte(fmt.Sprintf("gamestats.%s", old.Fingerprint.Hostname)),
-			New:    []byte(fmt.Sprintf("gamestats.%s", new.Fingerprint.Hostname)),
-			Length: 21,
-			Count:  2,
-		},
-		{
-			Old:    []byte(fmt.Sprintf("http://stage-net.%s/bf2/getplayerinfo.aspx?pid=", old.Fingerprint.Hostname)),
-			New:    []byte(fmt.Sprintf("http://stage-net.%s/bf2/getplayerinfo.aspx?pid=", new.Fingerprint.Hostname)),
-			Length: 56,
-			Count:  1,
-		},
-		{
-			Old: []byte(fmt.Sprintf("BF2Web.%s", old.Fingerprint.Hostname)),
-			New: []byte(fmt.Sprintf("BF2Web.%s", new.Fingerprint.Hostname)),
-			// Actual length of original is 18. However, "BF2Web.%s" would also match the below modification
-			// and break the url, so add another trailing nil-byte to avoid the partial match
-			Length: 19,
-			Count:  1,
-		},
-		{
-			Old:    []byte(fmt.Sprintf("http://BF2Web.%s/ASP/", old.Fingerprint.Hostname)),
-			New:    []byte(fmt.Sprintf("http://BF2Web.%s/ASP/", new.Fingerprint.Hostname)),
-			Length: 30,
-			Count:  1,
-		},
-		{
-			Old:    []byte(fmt.Sprintf("%%s.available.%s", old.Fingerprint.Hostname)),
-			New:    []byte(fmt.Sprintf("%%s.available.%s", new.Fingerprint.Hostname)),
-			Length: 24,
-			Count:  1,
-		},
-		{
-			Old:    []byte(fmt.Sprintf("%%s.master.%s", old.Fingerprint.Hostname)),
-			New:    []byte(fmt.Sprintf("%%s.master.%s", new.Fingerprint.Hostname)),
-			Length: 21,
-			Count:  1,
-		},
-		{
-			Old:    []byte(fmt.Sprintf("gpcm.%s", old.Fingerprint.Hostname)),
-			New:    []byte(fmt.Sprintf("gpcm.%s", new.Fingerprint.Hostname)),
-			Length: 16,
-			Count:  1,
-		},
-		{
-			Old:    []byte(fmt.Sprintf("gpsp.%s", old.Fingerprint.Hostname)),
-			New:    []byte(fmt.Sprintf("gpsp.%s", new.Fingerprint.Hostname)),
-			Length: 16,
-			Count:  1,
-		},
-	}
-
-	// Semi backend-specific modifications (common for some backends)
-	// Special case for PlayBF2: They remove the numeric placeholder/verb ("%d") in addition to changing the hostname
-	if old.Name == playbf2.Name {
-		// Remove "%d" when currently patched for PlayBF2
-		modifications = append(modifications, modification{
-			Old:    []byte(fmt.Sprintf("%%s.ms.%s", old.Fingerprint.Hostname)),
-			New:    []byte(fmt.Sprintf("%%s.ms%%d.%s", new.Fingerprint.Hostname)),
-			Length: 19,
-			Count:  1,
-		})
-	} else if new.Name == playbf2.Name {
-		// Add "%d" when patching to PlayBF2
-		modifications = append(modifications, modification{
-			Old:    []byte(fmt.Sprintf("%%s.ms%%d.%s", old.Fingerprint.Hostname)),
-			New:    []byte(fmt.Sprintf("%%s.ms.%s", new.Fingerprint.Hostname)),
-			Length: 19,
-			Count:  1,
-		})
-	} else {
-		// Symmetrical change for all other providers
-		modifications = append(modifications, modification{
-			Old:    []byte(fmt.Sprintf("%%s.ms%%d.%s", old.Fingerprint.Hostname)),
-			New:    []byte(fmt.Sprintf("%%s.ms%%d.%s", new.Fingerprint.Hostname)),
-			Length: 19,
-			Count:  1,
-		})
-	}
-
-	// Truly backend-specific modifications (unique to a single backend to be applied/reverted)
-	switch old.Name {
-	case bf2hub.Name:
-		modifications = append(modifications, modification{
-			Old:    []byte("bf2hbc.dll"),
-			New:    []byte("WS2_32.dll"),
-			Length: 10,
-			Count:  1,
-		},
-		)
-	}
-
-	switch new.Name {
-	case bf2hub.Name:
-		modifications = append(modifications, modification{
-			Old:    []byte("WS2_32.dll"),
-			New:    []byte("bf2hbc.dll"),
-			Length: 10,
-			Count:  1,
-		},
-		)
-	}
-
-	return modifications
+	return nil
 }
