@@ -73,6 +73,7 @@ func CreateMainWindow(h game.Handler, c client, f finder, r registryRepository) 
 
 	patchables := []patch.Patchable{
 		patchable.GameExecutable{},
+		patchable.ServerExecutable{},
 	}
 
 	if err = (declarative.MainWindow{
@@ -395,7 +396,7 @@ func prepareForPatch(r registryRepository) error {
 	killed := map[int]string{}
 	for _, process := range processes {
 		executable := process.Executable()
-		if executable == patchable.GameExecutableName || executable == bf2hubExecutableName {
+		if executable == patchable.GameExecutableName || executable == patchable.ServerExecutableName || executable == bf2hubExecutableName {
 			pid := process.Pid()
 			if err = killProcess(pid); err != nil {
 				return fmt.Errorf("failed to kill process %q: %s", executable, err)
