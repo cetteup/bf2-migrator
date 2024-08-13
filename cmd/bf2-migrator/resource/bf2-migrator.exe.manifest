@@ -3,7 +3,7 @@
     <assemblyIdentity
             type="win32"
             name="bf2-migrator"
-            version="0.6.0.0"
+            version="0.6.1.0"
             processorArchitecture="*"/>
     <dependency>
         <dependentAssembly>
