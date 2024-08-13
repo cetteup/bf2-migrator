@@ -3,8 +3,11 @@ package patch
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+
+	"go.uber.org/multierr"
 )
 
 type Provider string
@@ -30,7 +33,7 @@ type Modification struct {
 	Count  int
 }
 
-func Patch(patchable Patchable, dir string, new Provider) error {
+func Patch(patchable Patchable, dir string, new Provider) (err error) {
 	path := filepath.Join(dir, patchable.GetFileName())
 
 	stats, err := os.Stat(path)
@@ -38,7 +41,13 @@ func Patch(patchable Patchable, dir string, new Provider) error {
 		return err
 	}
 
-	original, err := os.ReadFile(path)
+	f, err := os.OpenFile(path, os.O_RDWR, stats.Mode())
+	if err != nil {
+		return err
+	}
+	defer multierr.AppendInvoke(&err, multierr.Close(f))
+
+	original, err := io.ReadAll(f)
 	if err != nil {
 		return err
 	}
@@ -79,7 +88,12 @@ func Patch(patchable Patchable, dir string, new Provider) error {
 		return fmt.Errorf("length of modified binary does not match length of original")
 	}
 
-	return os.WriteFile(path, modified, stats.Mode())
+	_, err = f.WriteAt(modified, 0)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func determineCurrentlyUsedProvider(b []byte, fingerprints map[Provider]Fingerprint) (Provider, error) {
