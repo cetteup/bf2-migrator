@@ -298,11 +298,13 @@ func CreateMainWindow(h game.Handler, c client, f finder, r registryRepository) 
 
 	profiles, selected, err := getProfiles(h)
 	if err != nil {
-		walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to load list of available profiles: %s", err.Error()), walk.MsgBoxIconError)
-		return nil, err
+		walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to load list of available profiles: %s\n\nProfile migration will not be available.", err.Error()), walk.MsgBoxIconError)
+		profileCB.SetEnabled(false)
+		migratePB.SetEnabled(false)
+	} else {
+		_ = profileCB.SetModel(profiles)
+		_ = profileCB.SetCurrentIndex(selected)
 	}
-	_ = profileCB.SetModel(profiles)
-	_ = profileCB.SetCurrentIndex(selected)
 
 	// Automatically try to detect install path once, pre-filling path if path is detected
 	detected, err := detectInstallPath(f)
