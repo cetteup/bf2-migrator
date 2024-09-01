@@ -17,7 +17,7 @@ import (
 	"github.com/cetteup/joinme.click-launcher/pkg/software_finder"
 
 	"github.com/cetteup/bf2-migrator/cmd/bf2-migrator/internal/patchable"
-	api "github.com/cetteup/bf2-migrator/pkg/openspy"
+	"github.com/cetteup/bf2-migrator/pkg/gamespy"
 	"github.com/cetteup/bf2-migrator/pkg/patch"
 )
 
@@ -28,12 +28,6 @@ const (
 	bf2hubExecutableName = "bf2hub.exe"
 )
 
-type client interface {
-	CreateAccount(email, password string, partnerCode int) error
-	CreateProfile(nick string, namespaceID int) error
-	GetProfiles() ([]api.ProfileDTO, error)
-}
-
 type finder interface {
 	GetInstallDirFromSomewhere(configs []software_finder.Config) (string, error)
 }
@@ -42,12 +36,17 @@ type registryRepository interface {
 	OpenKey(k registry.Key, path string, access uint32, cb func(key registry.Key) error) error
 }
 
+type client interface {
+	GetNicks(provider gamespy.Provider, email, password string) ([]gamespy.NickDTO, error)
+	CreateUser(provider gamespy.Provider, email, password, nick string) error
+}
+
 type providerCBOption struct {
 	Name     string
 	Provider patch.Provider
 }
 
-func CreateMainWindow(h game.Handler, c client, f finder, r registryRepository) (*walk.MainWindow, error) {
+func CreateMainWindow(h game.Handler, f finder, r registryRepository, c client) (*walk.MainWindow, error) {
 	icon, err := walk.NewIconFromResourceIdWithSize(2, walk.Size{Width: 256, Height: 256})
 	if err != nil {
 		return nil, err
@@ -360,27 +359,22 @@ func migrateProfile(h game.Handler, c client, profileKey string) error {
 		return fmt.Errorf("failed to get email address from profile config file: %w", err)
 	}
 
-	err = c.CreateAccount(email.String(), password, 0)
-	if err != nil {
-		return fmt.Errorf("failed to create OpenSpy account: %w", err)
-	}
-
-	profiles, err := c.GetProfiles()
+	nicks, err := c.GetNicks(gamespy.ProviderOpenSpy, email.String(), password)
 	if err != nil {
 		return fmt.Errorf("failed to get OpenSpy account profiles: %w", err)
 	}
 
 	// Don't use slices package here to maintain compatibility with go 1.20 (and thus Windows 7)
 	exists := false
-	for _, profile := range profiles {
-		if profile.UniqueNick == nick && profile.NamespaceID == 12 {
+	for _, profile := range nicks {
+		if profile.UniqueNick == nick {
 			exists = true
 			break
 		}
 	}
 
 	if !exists {
-		err2 := c.CreateProfile(nick, 12)
+		err2 := c.CreateUser(gamespy.ProviderOpenSpy, email.String(), password, nick)
 		if err2 != nil {
 			return fmt.Errorf("failed to create OpenSpy profile: %w", err2)
 		}
