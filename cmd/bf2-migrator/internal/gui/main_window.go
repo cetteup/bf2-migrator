@@ -23,9 +23,13 @@ import (
 
 const (
 	windowWidth  = 290
-	windowHeight = 350
+	windowHeight = 412
 
 	bf2hubExecutableName = "bf2hub.exe"
+
+	providerNameBF2Hub  = "BF2Hub"
+	providerNamePlayBF2 = "PlayBF2"
+	providerNameOpenSpy = "OpenSpy"
 )
 
 type finder interface {
@@ -41,9 +45,9 @@ type client interface {
 	CreateUser(provider gamespy.Provider, email, password, nick string) error
 }
 
-type providerCBOption struct {
-	Name     string
-	Provider patch.Provider
+type providerCBOption[T patch.Provider | gamespy.Provider] struct {
+	Name  string
+	Value T
 }
 
 func CreateMainWindow(h game.Handler, f finder, r registryRepository, c client) (*walk.MainWindow, error) {
@@ -57,9 +61,10 @@ func CreateMainWindow(h game.Handler, f finder, r registryRepository, c client) 
 
 	var mw *walk.MainWindow
 	var profileCB *walk.ComboBox
+	var migrateProviderCB *walk.ComboBox
 	var migratePB *walk.PushButton
 	var pathTE *walk.TextEdit
-	var providerCB *walk.ComboBox
+	var patchProviderCB *walk.ComboBox
 	var patchPB *walk.PushButton
 	var revertPB *walk.PushButton
 
@@ -114,24 +119,53 @@ func CreateMainWindow(h game.Handler, f finder, r registryRepository, c client) 
 							}
 						},
 					},
+					declarative.Label{
+						Text:       "Select provider",
+						TextColor:  walk.Color(win.GetSysColor(win.COLOR_CAPTIONTEXT)),
+						Background: declarative.SolidColorBrush{Color: walk.Color(win.GetSysColor(win.COLOR_BTNFACE))},
+					},
+					declarative.ComboBox{
+						AssignTo:      &migrateProviderCB,
+						DisplayMember: "Name",
+						BindingMember: "Value",
+						Name:          "Select provider",
+						ToolTipText:   "Select provider",
+						Model: []providerCBOption[gamespy.Provider]{
+							{
+								Name:  providerNameBF2Hub,
+								Value: gamespy.ProviderBF2Hub,
+							},
+							{
+								Name:  providerNamePlayBF2,
+								Value: gamespy.ProviderPlayBF2,
+							},
+							{
+								Name:  providerNameOpenSpy,
+								Value: gamespy.ProviderOpenSpy,
+							},
+							// Not offering GameSpy (obsolete, cannot migrate anything to it)
+						},
+						CurrentIndex: 2, // Select OpenSpy as default
+					},
 					declarative.PushButton{
 						AssignTo: &migratePB,
-						Text:     "Migrate to OpenSpy",
+						Text:     "Migrate profile",
 						OnClicked: func() {
 							// Block any actions during migrations
 							mw.SetEnabled(false)
 							_ = migratePB.SetText("Migrating...")
 							defer func() {
-								_ = migratePB.SetText("Migrate to OpenSpy")
+								_ = migratePB.SetText("Migrate profile")
 								mw.SetEnabled(true)
 							}()
 
+							provider := migrateProviderCB.Model().([]providerCBOption[gamespy.Provider])[migrateProviderCB.CurrentIndex()]
 							profile := profileCB.Model().([]game.Profile)[profileCB.CurrentIndex()]
-							err2 := migrateProfile(h, c, profile.Key)
+							err2 := migrateProfile(h, c, provider.Value, profile.Key)
 							if err2 != nil {
-								walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to migrate %q to OpenSpy: %s", profile.Name, err2.Error()), walk.MsgBoxIconError)
+								walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to migrate %q to %s: %s", profile.Name, provider.Name, err2.Error()), walk.MsgBoxIconError)
 							} else {
-								walk.MsgBox(mw, "Success", fmt.Sprintf("Migrated %q to OpenSpy", profile.Name), walk.MsgBoxIconInformation)
+								walk.MsgBox(mw, "Success", fmt.Sprintf("Migrated %q to %s", profile.Name, provider.Name), walk.MsgBoxIconInformation)
 							}
 						},
 					},
@@ -199,20 +233,20 @@ func CreateMainWindow(h game.Handler, f finder, r registryRepository, c client) 
 								Background: declarative.SolidColorBrush{Color: walk.Color(win.GetSysColor(win.COLOR_BTNFACE))},
 							},
 							declarative.ComboBox{
-								AssignTo:      &providerCB,
+								AssignTo:      &patchProviderCB,
 								DisplayMember: "Name",
-								BindingMember: "Provider",
+								BindingMember: "Value",
 								Name:          "Select provider",
 								ToolTipText:   "Select provider",
-								Model: []providerCBOption{
+								Model: []providerCBOption[patch.Provider]{
 									// Not offering BF2Hub (needs a .dll in addition to .exe changes)
 									{
-										Name:     string(patchable.ProviderPlayBF2),
-										Provider: patchable.ProviderPlayBF2,
+										Name:  providerNamePlayBF2,
+										Value: patchable.ProviderPlayBF2,
 									},
 									{
-										Name:     string(patchable.ProviderOpenSpy),
-										Provider: patchable.ProviderOpenSpy,
+										Name:  providerNameOpenSpy,
+										Value: patchable.ProviderOpenSpy,
 									},
 									// Not offering GameSpy (obsolete, only used for reverting)
 								},
@@ -239,12 +273,12 @@ func CreateMainWindow(h game.Handler, f finder, r registryRepository, c client) 
 												return
 											}
 
-											selected := providerCB.Model().([]providerCBOption)[providerCB.CurrentIndex()]
-											err2 = patchAll(patchables, pathTE.Text(), selected.Provider)
+											provider := patchProviderCB.Model().([]providerCBOption[patch.Provider])[patchProviderCB.CurrentIndex()]
+											err2 = patchAll(patchables, pathTE.Text(), provider.Value)
 											if err2 != nil {
 												walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to patch %s", err2.Error()), walk.MsgBoxIconError)
 											} else {
-												walk.MsgBox(mw, "Success", fmt.Sprintf("Patched game to use %s", selected.Name), walk.MsgBoxIconInformation)
+												walk.MsgBox(mw, "Success", fmt.Sprintf("Patched game to use %s", provider.Name), walk.MsgBoxIconInformation)
 											}
 										},
 									},
@@ -338,7 +372,7 @@ func getProfiles(h game.Handler) ([]game.Profile, int, error) {
 	return profiles, 0, nil
 }
 
-func migrateProfile(h game.Handler, c client, profileKey string) error {
+func migrateProfile(h game.Handler, c client, provider gamespy.Provider, profileKey string) error {
 	profileCon, err := bf2.ReadProfileConfigFile(h, profileKey, bf2.ProfileConfigFileProfileCon)
 	if err != nil {
 		return fmt.Errorf("failed to read profile config file: %w", err)
@@ -359,7 +393,7 @@ func migrateProfile(h game.Handler, c client, profileKey string) error {
 		return fmt.Errorf("failed to get email address from profile config file: %w", err)
 	}
 
-	nicks, err := c.GetNicks(gamespy.ProviderOpenSpy, email.String(), password)
+	nicks, err := c.GetNicks(provider, email.String(), password)
 	if err != nil {
 		return fmt.Errorf("failed to get OpenSpy account profiles: %w", err)
 	}
@@ -374,7 +408,7 @@ func migrateProfile(h game.Handler, c client, profileKey string) error {
 	}
 
 	if !exists {
-		err2 := c.CreateUser(gamespy.ProviderOpenSpy, email.String(), password, nick)
+		err2 := c.CreateUser(provider, email.String(), password, nick)
 		if err2 != nil {
 			return fmt.Errorf("failed to create OpenSpy profile: %w", err2)
 		}
