@@ -334,6 +334,7 @@ func CreateMainWindow(h game.Handler, f finder, r registryRepository, c client) 
 	profiles, selected, err := getProfiles(h)
 	if err != nil {
 		walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to load list of available profiles: %s\n\nProfile migration will not be available.", err.Error()), walk.MsgBoxIconError)
+		migrateProviderCB.SetEnabled(false)
 		profileCB.SetEnabled(false)
 		migratePB.SetEnabled(false)
 	} else {
