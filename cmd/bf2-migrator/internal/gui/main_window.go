@@ -161,9 +161,11 @@ func CreateMainWindow(h game.Handler, f finder, r registryRepository, c client) 
 
 							provider := migrateProviderCB.Model().([]providerCBOption[gamespy.Provider])[migrateProviderCB.CurrentIndex()]
 							profile := profileCB.Model().([]game.Profile)[profileCB.CurrentIndex()]
-							err2 := migrateProfile(h, c, provider.Value, profile.Key)
+							migrated, err2 := migrateProfile(h, c, provider.Value, profile.Key)
 							if err2 != nil {
 								walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to migrate %q to %s: %s", profile.Name, provider.Name, err2.Error()), walk.MsgBoxIconError)
+							} else if !migrated {
+								walk.MsgBox(mw, "Skipped", fmt.Sprintf("%q is already set up on %s", profile.Name, provider.Name), walk.MsgBoxIconInformation)
 							} else {
 								walk.MsgBox(mw, "Success", fmt.Sprintf("Migrated %q to %s", profile.Name, provider.Name), walk.MsgBoxIconInformation)
 							}
@@ -372,49 +374,45 @@ func getProfiles(h game.Handler) ([]game.Profile, int, error) {
 	return profiles, 0, nil
 }
 
-func migrateProfile(h game.Handler, c client, provider gamespy.Provider, profileKey string) error {
+func migrateProfile(h game.Handler, c client, provider gamespy.Provider, profileKey string) (bool, error) {
 	profileCon, err := bf2.ReadProfileConfigFile(h, profileKey, bf2.ProfileConfigFileProfileCon)
 	if err != nil {
-		return fmt.Errorf("failed to read profile config file: %w", err)
+		return false, fmt.Errorf("failed to read profile config file: %w", err)
 	}
 
 	nick, encrypted, err := bf2.GetEncryptedLogin(profileCon)
 	if err != nil {
-		return fmt.Errorf("failed to get encrypted login from profile config file: %w", err)
+		return false, fmt.Errorf("failed to get encrypted login from profile config file: %w", err)
 	}
 
 	password, err := bf2.DecryptProfileConPassword(encrypted)
 	if err != nil {
-		return fmt.Errorf("failed to decrypt profile password: %w", err)
+		return false, fmt.Errorf("failed to decrypt profile password: %w", err)
 	}
 
 	email, err := profileCon.GetValue(bf2.ProfileConKeyEmail)
 	if err != nil {
-		return fmt.Errorf("failed to get email address from profile config file: %w", err)
+		return false, fmt.Errorf("failed to get email address from profile config file: %w", err)
 	}
 
 	nicks, err := c.GetNicks(provider, email.String(), password)
 	if err != nil {
-		return fmt.Errorf("failed to get OpenSpy account profiles: %w", err)
+		return false, fmt.Errorf("failed to get OpenSpy account profiles: %w", err)
 	}
 
 	// Don't use slices package here to maintain compatibility with go 1.20 (and thus Windows 7)
-	exists := false
 	for _, profile := range nicks {
 		if profile.UniqueNick == nick {
-			exists = true
-			break
+			return false, nil
 		}
 	}
 
-	if !exists {
-		err2 := c.CreateUser(provider, email.String(), password, nick)
-		if err2 != nil {
-			return fmt.Errorf("failed to create OpenSpy profile: %w", err2)
-		}
+	err2 := c.CreateUser(provider, email.String(), password, nick)
+	if err2 != nil {
+		return false, fmt.Errorf("failed to create OpenSpy profile: %w", err2)
 	}
 
-	return nil
+	return true, nil
 }
 
 func prepareForPatch(r registryRepository) error {
