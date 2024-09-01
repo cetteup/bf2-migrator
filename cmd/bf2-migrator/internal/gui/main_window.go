@@ -60,6 +60,7 @@ func CreateMainWindow(h game.Handler, f finder, r registryRepository, c client) 
 	screenHeight := win.GetSystemMetrics(win.SM_CYSCREEN)
 
 	var mw *walk.MainWindow
+	var migrateGB *walk.GroupBox
 	var profileCB *walk.ComboBox
 	var migrateProviderCB *walk.ComboBox
 	var migratePB *walk.PushButton
@@ -95,9 +96,10 @@ func CreateMainWindow(h game.Handler, f finder, r registryRepository, c client) 
 		ToolBar: declarative.ToolBar{},
 		Children: []declarative.Widget{
 			declarative.GroupBox{
-				Title:  "Migrate",
-				Name:   "Migrate",
-				Layout: declarative.VBox{},
+				AssignTo: &migrateGB,
+				Title:    "Migrate",
+				Name:     "Migrate",
+				Layout:   declarative.VBox{},
 				Children: []declarative.Widget{
 					declarative.Label{
 						Text:       "Select profile",
@@ -333,7 +335,13 @@ func CreateMainWindow(h game.Handler, f finder, r registryRepository, c client) 
 
 	profiles, selected, err := getProfiles(h)
 	if err != nil {
-		walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to load list of available profiles: %s\n\nProfile migration will not be available.", err.Error()), walk.MsgBoxIconError)
+		walk.MsgBox(mw, "Error", fmt.Sprintf("Failed to load profiles: %s\n\nProfile migration will not be available", err.Error()), walk.MsgBoxIconError)
+		_ = migrateGB.SetTitle("Migrate (unavailable: failed to load profiles)")
+		migrateProviderCB.SetEnabled(false)
+		profileCB.SetEnabled(false)
+		migratePB.SetEnabled(false)
+	} else if len(profiles) == 0 {
+		_ = migrateGB.SetTitle("Migrate (unavailable: no profiles found)")
 		migrateProviderCB.SetEnabled(false)
 		profileCB.SetEnabled(false)
 		migratePB.SetEnabled(false)
