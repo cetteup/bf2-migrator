@@ -6,6 +6,8 @@ github.com/cetteup/joinme.click-launcher v0.3.0 h1:y9kM+umnmElfKtxybV1yhGFcCTcHe
 github.com/cetteup/joinme.click-launcher v0.3.0/go.mod h1:XHaR9+7fQMzXaI418zqPSi3Fl6se9m3aqKIGdZFlyBc=
 github.com/coreos/go-systemd/v22 v22.5.0/go.mod h1:Y58oyj3AT4RCenI/lSvhwexgC+NSVTIJ3seZv2GcEnc=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
+github.com/dogclan/dumbspy v0.5.0 h1:k9/5qZDqFTuKGjN2szW5O7RaHk1aMWIirQpOqkYnmBE=
+github.com/dogclan/dumbspy v0.5.0/go.mod h1:D23aXq5rFUxPPWjpeinB/WkJF7mBV6egbUnZPjP/d4k=
 github.com/godbus/dbus/v5 v5.0.4/go.mod h1:xhWf0FNVPg57R7Z0UbKHbJfkEywrmjJnf7w5xrFpKfA=
 github.com/golang/mock v1.6.0 h1:ErTB+efbowRARo13NNdxyJji2egdxLGQhRaY+DUumQc=
 github.com/lxn/walk v0.0.0-20210112085537-c389da54e794 h1:NVRJ0Uy0SOFcXSKLsS65OmI1sgCCfiDUPj+cwnH7GZw=
@@ -19,6 +21,8 @@ github.com/mattn/go-isatty v0.0.19 h1:JITubQf0MOLdlGRuRq+jtsDlekdYPia9ZFsB8h/APP
 github.com/mattn/go-isatty v0.0.19/go.mod h1:W+V8PltTTMOvKvAeJH7IuucS94S2C6jfK/D7dTCTo3Y=
 github.com/mitchellh/go-ps v1.0.0 h1:i6ampVEEF4wQFF+bkYfwYgY+F/uYJDktmvLPf7qIgjc=
 github.com/mitchellh/go-ps v1.0.0/go.mod h1:J4lOc8z8yJs6vUwklHw2XEIiT4z4C40KtWVN3nvg8Pg=
+github.com/npat-efault/crc16 v0.0.0-20161013170008-4128ccbe47c3 h1:LreEMrgwmSTNPbtao3jPZjwrjRYrlYTDg0kTMPOgSHg=
+github.com/npat-efault/crc16 v0.0.0-20161013170008-4128ccbe47c3/go.mod h1:1E9pLoYv14Va+AZbH8ywpTseVh5R4rwkRla445GfE1U=
 github.com/pkg/errors v0.9.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/rs/xid v1.5.0/go.mod h1:trrq9SKmegXys3aeAKXMUTdJsYXVwGY3RLcfgqegfbg=

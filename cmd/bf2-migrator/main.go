@@ -14,7 +14,7 @@ import (
 	"github.com/cetteup/conman/pkg/handler"
 
 	"github.com/cetteup/bf2-migrator/cmd/bf2-migrator/internal/gui"
-	"github.com/cetteup/bf2-migrator/pkg/openspy"
+	"github.com/cetteup/bf2-migrator/pkg/gamespy"
 )
 
 func init() {
@@ -26,9 +26,9 @@ func main() {
 	registryRepository := registry_repository.New()
 	h := handler.New(fileRepository)
 
-	c := openspy.New(openspy.BaseURL, 10)
 	f := software_finder.New(registryRepository, fileRepository)
-	mw, err := gui.CreateMainWindow(h, c, f, registryRepository)
+	c := gamespy.NewClient(10)
+	mw, err := gui.CreateMainWindow(h, f, registryRepository, c)
 	if err != nil {
 		log.Fatal().Err(err).Msg("Failed to create main window")
 	}
