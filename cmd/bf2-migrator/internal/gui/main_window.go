@@ -496,6 +496,10 @@ func detectInstallPath(f finder) (string, error) {
 func patchAll(patchables []patch.Patchable, dir string, new patch.Provider) error {
 	for _, p := range patchables {
 		if err := patch.Patch(p, dir, new); err != nil {
+			// Server executable is optional and not included with some installers for the game
+			if errors.Is(err, patch.ErrNotExist) && p.GetFileName() == patchable.ServerExecutableName {
+				return nil
+			}
 			return fmt.Errorf("%s: %w", p.GetFileName(), err)
 		}
 	}

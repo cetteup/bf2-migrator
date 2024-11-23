@@ -16,6 +16,10 @@ const (
 	ProviderUnknown Provider = "unknown"
 )
 
+var (
+	ErrNotExist = os.ErrNotExist
+)
+
 type Patchable interface {
 	GetFileName() string
 	GetFingerprints() map[Provider]Fingerprint
@@ -38,11 +42,17 @@ func Patch(patchable Patchable, dir string, new Provider) (err error) {
 
 	stats, err := os.Stat(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return ErrNotExist
+		}
 		return err
 	}
 
 	f, err := os.OpenFile(path, os.O_RDWR, stats.Mode())
 	if err != nil {
+		if os.IsNotExist(err) {
+			return ErrNotExist
+		}
 		return err
 	}
 	defer multierr.AppendInvoke(&err, multierr.Close(f))
