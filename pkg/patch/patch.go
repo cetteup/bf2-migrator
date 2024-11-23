@@ -2,6 +2,7 @@ package patch
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,7 +18,8 @@ const (
 )
 
 var (
-	ErrNotExist = os.ErrNotExist
+	ErrNotExist     = os.ErrNotExist
+	ErrNotPatchable = errors.New("binary contains unknown/mixed modifications")
 )
 
 type Patchable interface {
@@ -113,7 +115,7 @@ func determineCurrentlyUsedProvider(b []byte, fingerprints map[Provider]Fingerpr
 		}
 	}
 
-	return ProviderUnknown, fmt.Errorf("binary contains unknown/mixed modifications, revert changes first")
+	return ProviderUnknown, ErrNotPatchable
 }
 
 func padRight(b []byte, c byte, l int) []byte {
