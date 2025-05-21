@@ -3,13 +3,13 @@
     "FileVersion": {
       "Major": 0,
       "Minor": 7,
-      "Patch": 0,
+      "Patch": 1,
       "Build": 0
     },
     "ProductVersion": {
       "Major": 0,
       "Minor": 7,
-      "Patch": 0,
+      "Patch": 1,
       "Build": 0
     },
     "FileFlagsMask": "3f",
@@ -22,14 +22,14 @@
     "Comments": "",
     "CompanyName": "cetteup",
     "FileDescription": "bf2-migrator",
-    "FileVersion": "v0.7.0.0",
+    "FileVersion": "v0.7.1.0",
     "InternalName": "",
     "LegalCopyright": "",
     "LegalTrademarks": "",
     "OriginalFilename": "",
     "PrivateBuild": "",
     "ProductName": "bf2-migrator",
-    "ProductVersion": "v0.7.0.0",
+    "ProductVersion": "v0.7.1.0",
     "SpecialBuild": ""
   },
   "VarFileInfo": {

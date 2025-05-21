@@ -320,7 +320,7 @@ func CreateMainWindow(h game.Handler, f finder, r registryRepository, c client) 
 				},
 			},
 			declarative.Label{
-				Text:       "BF2 migrator v0.7.0",
+				Text:       "BF2 migrator v0.7.1",
 				Alignment:  declarative.AlignHCenterVCenter,
 				TextColor:  walk.Color(win.GetSysColor(win.COLOR_GRAYTEXT)),
 				Background: declarative.SolidColorBrush{Color: walk.Color(win.GetSysColor(win.COLOR_BTNFACE))},
