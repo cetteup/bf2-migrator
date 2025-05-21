@@ -204,5 +204,9 @@ func read(conn net.Conn, timeout time.Duration) (*gamespy.Packet, error) {
 }
 
 func getHostname(provider Provider, service string) string {
+	// This is a proper ugly workaround, but BF2Hub refuses to update the DNS entries for their GameSpy services
+	if provider == ProviderBF2Hub {
+		return service + "." + string(provider) + ".cetteup.com"
+	}
 	return service + "." + string(provider)
 }
